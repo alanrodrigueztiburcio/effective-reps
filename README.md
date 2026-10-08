@@ -69,7 +69,7 @@ Settings → Export JSON backup saves sessions, sets, custom exercises, attribut
 
 **Merge** is idempotent by stable identifiers; existing records win collisions. A merge containing a different active workout is rejected until the current one is completed. **Replace** removes existing personal records and restores the backup after an explicit confirmation. Export before replacing. Unsupported schema versions are rejected.
 
-Records do not synchronize between browsers or devices. Clearing browser site data, changing origin, or losing the device may make records inaccessible. PWA installation and a persistent-storage request do not guarantee permanent retention; keep backups.
+Records synchronize between signed-in devices through optional Supabase syncing. Clearing browser site data, changing origin, or losing the device may make unsynced records inaccessible. PWA installation and a persistent-storage request do not guarantee permanent retention; keep backups.
 
 ## Source data and reproduction
 
@@ -88,7 +88,9 @@ Sources: [Free Exercise DB](https://github.com/yuhonas/free-exercise-db), distri
 - `src/core.ts`: pure calculation, attribution, aggregation, target and settings validation.
 - `src/db.ts`: versioned Dexie persistence, session operations, transactional backup/restore.
 - `src/data/`: complete immutable source dataset, schema and provenance.
-- `src/App.tsx`: four screens, live database queries and entry workflows.
+- `src/App.tsx`: navigation, live database queries and actual-set entry workflows.
+- `src/TrainingViews.tsx`, `src/training.ts`: independent plans, blocks, dated sessions, and calendar helpers.
+- `src/ProgressView.tsx`, `src/progress.ts`: completed-session weekly and block comparisons.
 - `scripts/import-exercises.mjs`: reproducible schema-validated source import.
 - `vite.config.ts`: base path, manifest, precache, image cache and update behavior.
 - `src/*.test.ts`, `tests/`: calculation, integrity, persistence and mobile/offline browser verification.
@@ -96,14 +98,14 @@ Sources: [Free Exercise DB](https://github.com/yuhonas/free-exercise-db), distri
 
 ## Verification limits
 
-Automated Chromium tests exercise mobile-sized pages and offline reloads. Physical iOS/Android home-screen installation, multi-version service-worker upgrades and future database migrations require device/release testing. The initial release provides versioned infrastructure without inventing a second schema merely for a migration test.
+Automated Chromium tests exercise mobile-sized pages and offline reloads. Physical iOS/Android home-screen installation and multi-version service-worker upgrades require device/release testing. Database tests upgrade an actual version-1 database to version 2 and verify its existing sessions and sets remain unchanged.
 
 
 ## Optional strength tracking
 
 Enable **Track strength for this exercise** in the set logger. It defaults off and remembers the choice per exercise; disabling it does not erase historical load records. Enter a positive load in lb or kg. Use a consistent convention, e.g., total barbell load or load per dumbbell. For bodyweight/assisted movements, use a separate custom exercise with a consistent meaningful load convention; the estimator does not infer body mass or assistance.
 
-The **Strength** tab shows chronological set history by exercise, load, repetitions, RIR, estimated 1RM, and overload flags. Pounds and kilograms are converted for comparisons. RIR-adjusted Epley is a heuristic: `load * (1 + (reps + RIR)/30)`, with a single rep at RIR 0 using recorded load. Estimates are withheld for rest-pause, zero reps, RIR > 4, and reps + RIR > 10. These limits are conservative app choices, not a validated applicability cutoff. Compare only within the same exercise and technique. Effective-rep attribution is independent of load and strength estimates.
+The **Progress** tab shows chronological set history by exercise, load, repetitions, RIR, estimated 1RM, and overload flags. Pounds and kilograms are converted for comparisons. RIR-adjusted Epley is a heuristic: `load * (1 + (reps + RIR)/30)`, with a single rep at RIR 0 using recorded load. Estimates are withheld for rest-pause, zero reps, RIR > 4, and reps + RIR > 10. These limits are conservative app choices, not a validated applicability cutoff. Compare only within the same exercise and technique. Effective-rep attribution is independent of load and strength estimates.
 
 Overload flags compare with the latest comparable standard set from an earlier workout: same exercise, same RIR, and either the same reps or equivalent load. Increased load at matched reps/RIR or increased reps at matched load/RIR earns a flag. A flag records performance progression, not proof of physiological adaptation.
 
@@ -119,3 +121,14 @@ Sync uses one full JSON snapshot per account. Row-level security isolates accoun
 On first sign-in, local records merge with cloud records; local settings win when both browsers already have settings. Existing local attribution settings and logged sets are retained, including any old secondary credit of zero. A browser that has synced to one account cannot silently attach its local data to a different account. Export, sign out, and clear site data before changing account ownership. Sign-out retains local data.
 
 Test coverage includes calculation boundaries, unit conversion, legacy backups, independent sync edits, deletions, conflicting edits, and concurrent active workouts. Browser tests use a mocked Supabase API; live authentication/database access requires the setup above and has not been verified.
+
+## Training structure: dates, templates, mesocycles
+
+Navigation: **Training → Workout → History → Templates → Progress**. Exercise directory and Settings remain available above the page content. The old `#strength` bookmark still opens Progress.
+
+- **Historical dates:** choose Workout date before starting a session. In an active or historical session, expand **Workout date & mesocycle** to change its performed date or explicit block assignment. Sessions and new sets store `performedAt` separately from `createdAt`; sessions also retain the entered calendar `performedDate` so time-zone changes do not shift its workout day. `startedAt`/`timestamp` remain compatible performed-time fields. Changing a workout date retimes its sets but preserves original entry times, effective-rep calculations, strength loads and attribution snapshots. Old records fall back to their existing timestamps until edited.
+- **Templates:** create named, ordered plans with target sets, repetitions and RIR. Each exercise row has a stable ID, so repeated exercises can have distinct targets. Reordering/removing a row changes the plan only. Starting a session copies its template name and exercises/targets into a session snapshot; subsequent template edits never change that snapshot or actual sets. Use **Log planned exercise** to populate the logger. Targets do not become actual sets automatically; logged set counts remain separate.
+- **Mesocycles:** create blocks with names, start/end dates, goals and references to any reusable templates. Assign a block optionally when starting a workout or afterward in History. A workout belongs to the selected block even outside its planned dates; date-range warnings never reject an otherwise valid explicit assignment. Templates are independent of blocks, and blank/unassigned workouts remain supported.
+- **Progress:** choose all blocks, one block, or unassigned workouts, and group by week or mesocycle. Only completed sessions contribute to these summaries. Calendar weeks begin Monday; selected-block weeks begin on the block start date. Out-of-range member workouts remain included. Strength comparisons report best load with repetitions/RIR and best/first/last eligible estimated 1RM within an exercise, with kg/lb conversion. Muscle exposure sums each actual set's saved muscle attribution; it is effective-rep accounting, not a newly validated physiological stimulus metric. Empty periods are omitted, not imputed as measured zeros.
+
+IndexedDB version 2 adds plan/block tables without rewriting existing workouts. JSON backup schema 2 exports all tables; schema-1 backups and cloud snapshots remain importable. New-schema snapshots stop older app versions from silently overwriting new planning data: **update the app on every syncing device**. The existing Supabase JSON table and RPC need no SQL changes. Planning data, snapshots, dates and membership participate in the same conflict-protected account sync.

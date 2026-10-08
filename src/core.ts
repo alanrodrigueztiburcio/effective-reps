@@ -39,6 +39,35 @@ export interface Session {
   status: "active" | "completed";
   createdAt: string;
   updatedAt: string;
+  performedAt?: string;
+  performedDate?: string;
+  mesocycleId?: string | null;
+  templateId?: string | null;
+  templateSnapshot?: { name: string; items: TemplateItem[] };
+}
+export interface TemplateItem {
+  id: string;
+  exercise: Exercise;
+  sets: number;
+  reps: number;
+  rir: number;
+}
+export interface WorkoutTemplate {
+  id: string;
+  name: string;
+  items: TemplateItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+export interface Mesocycle {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  goal: string;
+  templateIds: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 export interface SetRecord {
   id: string;
@@ -55,6 +84,9 @@ export interface SetRecord {
   weights: Weights;
   calculationVersion: "1";
   strength?: { load: number; unit: "lb" | "kg" };
+  performedAt?: string;
+  createdAt?: string;
+  templateItemId?: string | null;
 }
 export interface Override {
   exerciseId: string;

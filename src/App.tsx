@@ -8,6 +8,7 @@ import {
   type SetRecord,
   type Weights,
   type Muscle,
+  type TemplateItem,
   defaults,
   muscles,
   effective,
@@ -24,7 +25,15 @@ import {
   exportBackup,
   restoreBackup,
 } from "./db";
-import { StrengthHistory } from "./StrengthHistory";
+import {
+  MesocycleManager,
+  SessionDetails,
+  SessionPlan,
+  StartWorkout,
+  TemplateManager,
+} from "./TrainingViews";
+import { ProgressView } from "./ProgressView";
+import { onDate, sessionDay } from "./training";
 import { SyncPanel } from "./SyncPanel";
 const catalog = raw as Exercise[];
 const categories = [
@@ -53,9 +62,9 @@ function Image({ path, small = false }: { path?: string; small?: boolean }) {
   );
 }
 export default function App() {
-  const [page, setPage] = useState(location.hash.slice(1) || "workout");
+  const [page, setPage] = useState(location.hash.slice(1) || "training");
   useEffect(() => {
-    const f = () => setPage(location.hash.slice(1) || "workout");
+    const f = () => setPage(location.hash.slice(1) || "training");
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
   }, []);
@@ -75,12 +84,23 @@ export default function App() {
     updateServiceWorker,
   } = useRegisterSW();
   const sessions =
-    useLiveQuery(() => db.sessions.orderBy("startedAt").reverse().toArray()) ||
-    [];
+    useLiveQuery(async () =>
+      (await db.sessions.toArray()).sort(
+        (a, b) =>
+          sessionDay(b).localeCompare(sessionDay(a)) ||
+          b.startedAt.localeCompare(a.startedAt),
+      ),
+    ) || [];
   const allSets = useLiveQuery(() => db.sets.toArray()) || [];
   const custom = useLiveQuery(() => db.custom.toArray()) || [];
   const overrides = useLiveQuery(() => db.overrides.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.get("main")) || defaults;
+  const templates =
+    useLiveQuery(() => db.templates.orderBy("name").toArray()) || [];
+  const mesocycles =
+    useLiveQuery(() =>
+      db.mesocycles.orderBy("startDate").reverse().toArray(),
+    ) || [];
   const exercises = [...catalog, ...custom];
   const active = sessions.find((s) => s.status === "active");
   const [viewSession, setViewSession] = useState<string | null>(null);
@@ -91,6 +111,7 @@ export default function App() {
     .sort((a, b) => a.sequence - b.sequence);
   const summary = aggregate(sets);
   const [selected, setSelected] = useState<Exercise | null>(null);
+  const [plannedItemId, setPlannedItemId] = useState<string | null>(null);
   const [edit, setEdit] = useState<SetRecord | null>(null);
   const [reps, setReps] = useState(10);
   const [rir, setRir] = useState(2);
@@ -99,11 +120,21 @@ export default function App() {
   const [unit, setUnit] = useState<"lb" | "kg">("lb");
   const [strengthEnabled, setStrengthEnabled] = useState(false);
   useEffect(() => {
-    setStrengthEnabled(!!selected && (edit ? !!edit.strength : !!(settings.preferences.strengthExercises as Record<string, boolean> | undefined)?.[selected.id]));
+    setStrengthEnabled(
+      !!selected &&
+        (edit
+          ? !!edit.strength
+          : !!(
+              settings.preferences.strengthExercises as
+                | Record<string, boolean>
+                | undefined
+            )?.[selected.id]),
+    );
   }, [selected?.id, edit, settings.preferences]);
   const [type, setType] = useState<SetRecord["type"]>("standard");
   useEffect(() => {
     setEdit(null);
+    setPlannedItemId(null);
   }, [page, session?.id]);
   const [query, setQuery] = useState("");
   const [equipment, setEquipment] = useState("");
@@ -143,6 +174,7 @@ export default function App() {
   }
   function pick(e: Exercise) {
     setSelected(e);
+    setPlannedItemId(null);
     setLoad("");
     setQuery("");
     setDetail(null);
@@ -150,6 +182,7 @@ export default function App() {
   }
   function editSet(s: SetRecord) {
     setEdit(s);
+    setPlannedItemId(s.templateItemId || null);
     setSelected(
       exercises.find((e) => e.id === s.exerciseId) || {
         id: s.exerciseId,
@@ -179,14 +212,23 @@ export default function App() {
       throw new Error(
         "Effective repetitions are unavailable for cardio and stretching.",
       );
-    if (strengthEnabled && (load === "" || !Number.isFinite(load) || load <= 0)) throw new Error("Enter a positive load.");
+    if (strengthEnabled && (load === "" || !Number.isFinite(load) || load <= 0))
+      throw new Error("Enter a positive load.");
     const unchanged = edit?.exerciseId === selected.id;
+    const enteredAt = now(),
+      performedAt =
+        edit?.performedAt ||
+        edit?.timestamp ||
+        onDate(sessionDay(session), enteredAt);
     await saveSet({
       id: edit?.id || crypto.randomUUID(),
       sessionId: session.id,
       exerciseId: selected.id,
       exerciseName: unchanged ? edit!.exerciseName : selected.name,
-      timestamp: edit?.timestamp || now(),
+      timestamp: performedAt,
+      performedAt,
+      createdAt: edit?.createdAt || edit?.timestamp || enteredAt,
+      templateItemId: plannedItemId,
       sequence:
         edit?.sequence ?? Math.max(0, ...sets.map((s) => s.sequence)) + 1,
       type,
@@ -319,17 +361,25 @@ export default function App() {
           <div>
             <p className="eyebrow">YOUR TRAINING, ON THIS DEVICE</p>
             <h1>
-              {page === "workout"
-                ? "Make every set count."
-                : page === "exercises"
-                  ? "Exercise directory"
-                  : page === "history"
-                    ? "Workout history"
-                    : page === "strength"
-                      ? "Strength progression"
-                      : "Your settings"}
+              {page === "training"
+                ? "Your training"
+                : page === "templates"
+                  ? "Workout templates"
+                  : page === "workout"
+                    ? "Make every set count."
+                    : page === "exercises"
+                      ? "Exercise directory"
+                      : page === "history"
+                        ? "Workout history"
+                        : page === "strength" || page === "progress"
+                          ? "Training progress"
+                          : "Your settings"}
             </h1>
           </div>
+        </div>
+        <div className="utility-links">
+          <a href="#exercises">Exercise directory</a>
+          <a href="#settings">Settings</a>
         </div>
         <SyncPanel visible={page === "settings"} />
         {message && (
@@ -349,28 +399,60 @@ export default function App() {
           </div>
         )}
         {page === "workout" && !active && (
-          <section className="card welcome">
-            <p className="eyebrow">READY WHEN YOU ARE</p>
-            <h2>A fresh session.</h2>
-            <p>
-              Log your sets. See effective repetitions for each muscle as you
-              train.
-            </p>
-            <button disabled={busy} onClick={() => run(() => startSession())}>
-              Start workout →
-            </button>
-            <p className="muted">Works offline. Optional account syncing in Settings.</p>
-          </section>
+          <StartWorkout
+            templates={templates}
+            mesocycles={mesocycles}
+            run={run}
+          />
+        )}
+        {page === "training" && (
+          <>
+            <MesocycleManager
+              mesocycles={mesocycles}
+              templates={templates}
+              sessions={sessions}
+              run={run}
+            />
+            {active ? (
+              <section className="card">
+                <h2>Workout in progress</h2>
+                <p>
+                  {sessionDay(active)} ·{" "}
+                  {active.templateSnapshot?.name || "Blank workout"}
+                </p>
+                <a className="button-link" href="#workout">
+                  Resume workout
+                </a>
+              </section>
+            ) : (
+              <StartWorkout
+                templates={templates}
+                mesocycles={mesocycles}
+                run={run}
+              />
+            )}
+          </>
+        )}
+        {page === "templates" && (
+          <TemplateManager
+            templates={templates}
+            exercises={exercises}
+            run={run}
+          />
         )}
         {((page === "workout" && active) ||
           (page === "history" && session)) && (
           <>
             <div className="session-heading">
               <h2>
-                {new Date(session!.startedAt).toLocaleString([], {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
+                {new Date(sessionDay(session!) + "T12:00:00").toLocaleString(
+                  [],
+                  {
+                    dateStyle: "medium",
+                  },
+                )}
+                {session!.templateSnapshot &&
+                  ` · ${session!.templateSnapshot.name}`}
               </h2>
               {page === "workout" ? (
                 <button
@@ -401,6 +483,29 @@ export default function App() {
                 </button>
               )}
             </div>
+            <SessionDetails
+              key={
+                session!.id +
+                sessionDay(session!) +
+                (session!.mesocycleId || "")
+              }
+              session={session!}
+              mesocycles={mesocycles}
+              run={run}
+            />
+            <SessionPlan
+              session={session!}
+              sets={sets}
+              pick={(item) => {
+                pick(item.exercise);
+                setPlannedItemId(item.id);
+                setReps(item.reps);
+                setRir(item.rir);
+                setMini(0);
+                setType("standard");
+                setEdit(null);
+              }}
+            />
             <div className="stats">
               <div>
                 <strong>{sets.length}</strong>
@@ -458,12 +563,34 @@ export default function App() {
                     </details>
                     <label className="weight-row">
                       Track strength for this exercise
-                      <input type="checkbox" checked={strengthEnabled} onChange={e => {
-                        const enabled = e.target.checked;
-                        setStrengthEnabled(enabled);
-                        if (edit) setEdit({...edit, strength: enabled ? {load: Number(load) || 1, unit} : undefined});
-                        run(() => db.settings.put({...settings, preferences: {...settings.preferences, strengthExercises: {...(settings.preferences.strengthExercises as object || {}), [selected.id]: enabled}}}));
-                      }} />
+                      <input
+                        type="checkbox"
+                        checked={strengthEnabled}
+                        onChange={(e) => {
+                          const enabled = e.target.checked;
+                          setStrengthEnabled(enabled);
+                          if (edit)
+                            setEdit({
+                              ...edit,
+                              strength: enabled
+                                ? { load: Number(load) || 1, unit }
+                                : undefined,
+                            });
+                          run(() =>
+                            db.settings.put({
+                              ...settings,
+                              preferences: {
+                                ...settings.preferences,
+                                strengthExercises: {
+                                  ...((settings.preferences
+                                    .strengthExercises as object) || {}),
+                                  [selected.id]: enabled,
+                                },
+                              },
+                            }),
+                          );
+                        }}
+                      />
                     </label>
                     <div className="segmented">
                       <button
@@ -485,10 +612,39 @@ export default function App() {
                         run(log, edit ? "Set updated." : "Set logged.");
                       }}
                     >
-                      {strengthEnabled && <div className="entry">
-                        <label>Load<input type="number" min="0.01" step="any" required value={load} onChange={e => setLoad(e.target.value === "" ? "" : e.target.valueAsNumber)} /></label>
-                        <label>Unit<select value={unit} onChange={e => setUnit(e.target.value as "lb" | "kg")}><option>lb</option><option>kg</option></select></label>
-                      </div>}
+                      {strengthEnabled && (
+                        <div className="entry">
+                          <label>
+                            Load
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="any"
+                              required
+                              value={load}
+                              onChange={(e) =>
+                                setLoad(
+                                  e.target.value === ""
+                                    ? ""
+                                    : e.target.valueAsNumber,
+                                )
+                              }
+                            />
+                          </label>
+                          <label>
+                            Unit
+                            <select
+                              value={unit}
+                              onChange={(e) =>
+                                setUnit(e.target.value as "lb" | "kg")
+                              }
+                            >
+                              <option>lb</option>
+                              <option>kg</option>
+                            </select>
+                          </label>
+                        </div>
+                      )}
                       <div className="entry">
                         <label>
                           {type === "standard"
@@ -629,7 +785,10 @@ export default function App() {
                   <div>
                     <strong>{s.exerciseName}</strong>
                     <p>
-                      {s.strength ? `${s.strength.load} ${s.strength.unit} · ` : ""}{s.reps} reps · RIR {s.rir >= 6 ? "5+" : s.rir}
+                      {s.strength
+                        ? `${s.strength.load} ${s.strength.unit} · `
+                        : ""}
+                      {s.reps} reps · RIR {s.rir >= 6 ? "5+" : s.rir}
                       {s.type === "rest-pause"
                         ? ` · ${s.miniReps} mini-set reps`
                         : ""}
@@ -695,12 +854,18 @@ export default function App() {
                 >
                   <div>
                     <strong>
-                      {new Date(s.startedAt).toLocaleDateString([], {
-                        dateStyle: "long",
-                      })}
+                      {new Date(sessionDay(s) + "T12:00:00").toLocaleDateString(
+                        [],
+                        {
+                          dateStyle: "long",
+                        },
+                      )}
                     </strong>
                     <small>
-                      {s.status === "active" ? "In progress" : "Completed"} ·{" "}
+                      {s.templateSnapshot?.name || "Blank workout"} ·{" "}
+                      {mesocycles.find((m) => m.id === s.mesocycleId)?.name ||
+                        "No mesocycle"}{" "}
+                      · {s.status === "active" ? "In progress" : "Completed"} ·{" "}
                       {logged.length} sets
                     </small>
                   </div>
@@ -713,10 +878,15 @@ export default function App() {
             })}
           </section>
         )}
-        {page === "strength" && <StrengthHistory sets={allSets} />}
+        {(page === "strength" || page === "progress") && (
+          <ProgressView
+            sessions={sessions}
+            sets={allSets}
+            mesocycles={mesocycles}
+          />
+        )}
         {page === "settings" && (
           <div className="settings-grid">
-
             <section className="card">
               <h2>Training targets</h2>
               <form
@@ -798,8 +968,9 @@ export default function App() {
               <h2>Backup & restore</h2>
               <p>
                 Records stay in this browser. Clearing site data can erase them.
-                Sign in above to synchronize devices; export backups for recovery or
-                migration. Installation does not guarantee permanent storage.
+                Sign in above to synchronize devices; export backups for
+                recovery or migration. Installation does not guarantee permanent
+                storage.
               </p>
               <button
                 onClick={() =>
@@ -914,14 +1085,19 @@ export default function App() {
       </main>
       <nav>
         {[
+          ["training", "▦", "Training"],
           ["workout", "◈", "Workout"],
-          ["exercises", "⌕", "Exercises"],
           ["history", "◷", "History"],
-          ["strength", "↗", "Strength"],
-          ["settings", "⚙", "Settings"],
+          ["templates", "≡", "Templates"],
+          ["progress", "↗", "Progress"],
         ].map(([id, icon, label]) => (
-          <a className={page === id ? "active" : ""} key={id} href={"#" + id}>
-            <span>{icon}</span>
+          <a
+            className={page === id ? "active" : ""}
+            aria-label={label}
+            key={id}
+            href={"#" + id}
+          >
+            <span aria-hidden="true">{icon}</span>
             {label}
           </a>
         ))}

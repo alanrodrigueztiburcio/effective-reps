@@ -89,7 +89,7 @@ it("replace removes old records", async () => {
 it("rejects malformed backups before mutation", async () => {
   const d = await fixture();
   for (const mutate of [
-    (b: any) => (b.schemaVersion = 2),
+    (b: any) => (b.schemaVersion = 99),
     (b: any) => (b.sets[0].sessionId = "missing"),
     (b: any) => (b.sets[0].weights.chest = -1),
     (b: any) => (b.sets[0].effectiveReps = 99),

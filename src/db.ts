@@ -5,17 +5,29 @@ import {
   type Exercise,
   type Override,
   type Settings,
+  type WorkoutTemplate,
+  type Mesocycle,
   defaults,
   effective,
   muscles,
   validateSettings,
 } from "./core";
+import {
+  localDate,
+  onDate,
+  validDay,
+  validateItems,
+  validateTemplate,
+  validateMesocycle,
+} from "./training";
 export class Database extends Dexie {
   sessions!: Table<Session, string>;
   sets!: Table<SetRecord, string>;
   custom!: Table<Exercise, string>;
   overrides!: Table<Override, string>;
   settings!: Table<Settings, string>;
+  templates!: Table<WorkoutTemplate, string>;
+  mesocycles!: Table<Mesocycle, string>;
   constructor(name = "effective-reps") {
     super(name);
     this.version(1).stores({
@@ -25,26 +37,105 @@ export class Database extends Dexie {
       overrides: "exerciseId",
       settings: "id",
     });
+    // Additive upgrade: existing sets, attribution snapshots and sessions remain untouched.
+    this.version(2).stores({
+      sessions: "id,status,startedAt,performedDate,mesocycleId,templateId",
+      sets: "id,sessionId,[sessionId+sequence]",
+      custom: "id,name",
+      overrides: "exerciseId",
+      settings: "id",
+      templates: "id,name",
+      mesocycles: "id,startDate,endDate",
+    });
   }
 }
 export const db = new Database();
 export const now = () => new Date().toISOString();
-export async function startSession() {
-  return db.transaction("rw", db.sessions, async () => {
-    const active = await db.sessions.where("status").equals("active").first();
-    if (active) return active.id;
-    const date = now(),
-      id = crypto.randomUUID();
-    await db.sessions.add({
-      id,
-      startedAt: date,
-      completedAt: null,
-      status: "active",
-      createdAt: date,
-      updatedAt: date,
-    });
-    return id;
-  });
+export async function startSession(
+  options: {
+    day?: string;
+    templateId?: string | null;
+    mesocycleId?: string | null;
+  } = {},
+  database = db,
+) {
+  return database.transaction(
+    "rw",
+    [database.sessions, database.templates, database.mesocycles],
+    async () => {
+      const active = await database.sessions
+        .where("status")
+        .equals("active")
+        .first();
+      if (active) return active.id;
+      const date = now(),
+        id = crypto.randomUUID();
+      const day = options.day || localDate(date),
+        performedAt = onDate(day, date);
+      const template = options.templateId
+        ? await database.templates.get(options.templateId)
+        : null;
+      if (options.templateId && !template)
+        throw new Error("Template no longer exists.");
+      if (
+        options.mesocycleId &&
+        !(await database.mesocycles.get(options.mesocycleId))
+      )
+        throw new Error("Mesocycle no longer exists.");
+      await database.sessions.add({
+        id,
+        startedAt: performedAt,
+        performedAt,
+        performedDate: day,
+        mesocycleId: options.mesocycleId || null,
+        templateId: template?.id || null,
+        templateSnapshot: template
+          ? { name: template.name, items: structuredClone(template.items) }
+          : undefined,
+        completedAt: null,
+        status: "active",
+        createdAt: date,
+        updatedAt: date,
+      });
+      return id;
+    },
+  );
+}
+export async function updateSessionDetails(
+  id: string,
+  day: string,
+  mesocycleId: string | null,
+  database = db,
+) {
+  if (!validDay(day)) throw new Error("Choose a valid workout date.");
+  await database.transaction(
+    "rw",
+    [database.sessions, database.sets, database.mesocycles],
+    async () => {
+      const s = await database.sessions.get(id);
+      if (!s) throw new Error("Workout no longer exists.");
+      if (mesocycleId && !(await database.mesocycles.get(mesocycleId)))
+        throw new Error("Mesocycle no longer exists.");
+      const performedAt = onDate(day, s.performedAt || s.startedAt);
+      await database.sessions.update(id, {
+        performedDate: day,
+        performedAt,
+        startedAt: performedAt,
+        mesocycleId,
+        updatedAt: now(),
+      });
+      // Retiming is intentional; preserve original input timestamps and every calculation snapshot.
+      const sets = await database.sets.where("sessionId").equals(id).toArray();
+      for (const set of sets) {
+        const time = onDate(day, set.performedAt || set.timestamp);
+        await database.sets.update(set.id, {
+          createdAt: set.createdAt || set.timestamp,
+          performedAt: time,
+          timestamp: time,
+        });
+      }
+    },
+  );
 }
 export async function saveSet(record: SetRecord) {
   await db.transaction("rw", [db.sets, db.sessions], async () => {
@@ -55,13 +146,15 @@ export async function saveSet(record: SetRecord) {
   });
 }
 export interface Backup {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   exportedAt: string;
   sessions: Session[];
   sets: SetRecord[];
   custom: Exercise[];
   overrides: Override[];
   settings: Settings[];
+  templates?: WorkoutTemplate[];
+  mesocycles?: Mesocycle[];
 }
 export async function exportBackup(database = db): Promise<Backup> {
   return database.transaction(
@@ -72,15 +165,19 @@ export async function exportBackup(database = db): Promise<Backup> {
       database.custom,
       database.overrides,
       database.settings,
+      database.templates,
+      database.mesocycles,
     ],
     async () => ({
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: now(),
       sessions: await database.sessions.toArray(),
       sets: await database.sets.toArray(),
       custom: await database.custom.toArray(),
       overrides: await database.overrides.toArray(),
       settings: await database.settings.toArray(),
+      templates: await database.templates.toArray(),
+      mesocycles: await database.mesocycles.toArray(),
     }),
   );
 }
@@ -101,17 +198,23 @@ function date(value: unknown) {
 }
 export function validateBackup(value: unknown): Backup {
   const b = value as Backup;
-  if (!b || b.schemaVersion !== 1 || !date(b.exportedAt))
+  if (!b || ![1, 2].includes(b.schemaVersion) || !date(b.exportedAt))
     throw new Error("Unsupported or malformed backup.");
+  if (
+    b.schemaVersion === 2 &&
+    (!Array.isArray(b.templates) || !Array.isArray(b.mesocycles))
+  )
+    throw new Error("Missing training plans.");
   for (const key of [
     "sessions",
     "sets",
     "custom",
     "overrides",
     "settings",
+    ...(b.schemaVersion === 2 ? (["templates", "mesocycles"] as const) : []),
   ] as const) {
     if (!Array.isArray(b[key])) throw new Error(`Missing ${key}.`);
-    const ids = b[key].map((r: any) =>
+    const ids = b[key]!.map((r: any) =>
       key === "overrides" ? r.exerciseId : r.id,
     );
     if (
@@ -121,6 +224,21 @@ export function validateBackup(value: unknown): Backup {
       throw new Error(`Invalid or duplicate ${key} identifiers.`);
   }
   let active = 0;
+  for (const t of b.templates || []) {
+    validateTemplate(t);
+    if (![t.createdAt, t.updatedAt].every(date))
+      throw new Error("Invalid template dates.");
+  }
+  const templateIds = new Set((b.templates || []).map((t) => t.id));
+  for (const m of b.mesocycles || []) {
+    validateMesocycle(m);
+    if (
+      ![m.createdAt, m.updatedAt].every(date) ||
+      m.templateIds.some((id) => !templateIds.has(id))
+    )
+      throw new Error("Invalid block template reference.");
+  }
+  const mesocycleIds = new Set((b.mesocycles || []).map((m) => m.id));
   for (const s of b.sessions) {
     if (
       !["active", "completed"].includes(s.status) ||
@@ -129,12 +247,37 @@ export function validateBackup(value: unknown): Backup {
     )
       throw new Error("Invalid session.");
     if (s.status === "active") active++;
+    if (
+      (s.performedAt !== undefined && !date(s.performedAt)) ||
+      (s.performedDate !== undefined && !validDay(s.performedDate)) ||
+      (s.mesocycleId && !mesocycleIds.has(s.mesocycleId)) ||
+      (s.templateId && !templateIds.has(s.templateId))
+    )
+      throw new Error("Invalid workout date or training reference.");
+    if (s.templateSnapshot) {
+      if (typeof s.templateSnapshot.name !== "string")
+        throw new Error("Invalid template snapshot.");
+      validateItems(s.templateSnapshot.items);
+    }
   }
   if (active > 1) throw new Error("Multiple active workouts.");
   const sessions = new Set(b.sessions.map((s) => s.id));
   for (const s of b.sets) {
     weights(s.weights);
-    if (s.strength && (!Number.isFinite(s.strength.load) || s.strength.load <= 0 || !["lb", "kg"].includes(s.strength.unit)))
+    if (
+      (s.performedAt !== undefined && !date(s.performedAt)) ||
+      (s.createdAt !== undefined && !date(s.createdAt)) ||
+      (s.templateItemId !== undefined &&
+        s.templateItemId !== null &&
+        typeof s.templateItemId !== "string")
+    )
+      throw new Error("Invalid set metadata.");
+    if (
+      s.strength &&
+      (!Number.isFinite(s.strength.load) ||
+        s.strength.load <= 0 ||
+        !["lb", "kg"].includes(s.strength.unit))
+    )
       throw new Error("Invalid strength load or unit.");
     if (
       !sessions.has(s.sessionId) ||
@@ -193,6 +336,8 @@ export async function restoreBackup(
       database.custom,
       database.overrides,
       database.settings,
+      database.templates,
+      database.mesocycles,
     ],
     async () => {
       if (mode === "replace") {
@@ -210,6 +355,8 @@ export async function restoreBackup(
       }
       // Stable identifiers make merge idempotent; existing records win conflicts.
       for (const [table, records] of [
+        [database.templates, b.templates || []],
+        [database.mesocycles, b.mesocycles || []],
         [database.sessions, b.sessions],
         [database.sets, b.sets],
         [database.custom, b.custom],
