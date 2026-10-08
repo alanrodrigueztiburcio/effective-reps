@@ -73,7 +73,7 @@ export const defaults: Settings = {
   lower: 20,
   upper: 40,
   primary: 1,
-  secondary: 0,
+  secondary: 0.5,
   preferences: {},
 };
 export function effective(

@@ -43,7 +43,7 @@ The workflow derives `BASE_PATH` from the repository name, so it supports reposi
 BASE_PATH=/my-repository/ npm run build
 ```
 
-This deliverable has not been published to a GitHub repository. A live Pages URL and a successful remote workflow cannot be verified until the repository is configured.
+Source repository: https://github.com/alanrodrigueztiburcio/effective-reps. Enable GitHub Actions in Pages settings to deploy.
 
 ## Install and use offline
 
@@ -57,7 +57,7 @@ Updates present a reload action. The app does not automatically reload during a 
 
 Start or resume a workout, search and filter exercises, select one, enter reps/RIR, and log. The exercise and inputs stay selected between consecutive sets. Standard effective reps are `max(0, min(reps, 5 - RIR))`; the 5+ selector is stored as RIR 6 and counts zero. Rest-pause adds all mini-set reps and is one working set. Zero-credit sets remain in history. Cardio and stretching cannot be logged with this model.
 
-Primary muscles receive weight 1, secondary muscles weight 0. Multiple primary muscles each receive full credit. Anatomy is kept separate from attribution: performed reps and muscle-attributed reps are different quantities. Settings configure defaults and targets; exercise details configure overrides. All changes affect future sets. Each recorded set stores raw inputs, its name and attribution snapshot, and calculation version.
+Primary muscles receive weight 1, secondary muscles weight 0.5. Multiple primary muscles each receive full credit. Anatomy is kept separate from attribution: performed reps and muscle-attributed reps are different quantities. Previously saved settings keep their values; change the secondary weight to 0.5 in Settings if it still shows 0. Settings configure defaults and targets; exercise details configure overrides. All changes affect future sets. Each recorded set stores raw inputs, its name and attribution snapshot, and calculation version.
 
 Existing sets may be edited, reassigned to another exercise, or deleted, including from completed histories. Editing reps/RIR/type retains the original attribution snapshot; reassigning the exercise takes a fresh attribution snapshot. Muscle breakdowns sum exactly to displayed totals. Working-set count includes entries with positive effective repetitions, including rest-pause sequences.
 

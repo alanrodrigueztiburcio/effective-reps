@@ -72,22 +72,22 @@ describe("attribution", () => {
     expect(attribution(ex, defaults)).toEqual({
       chest: 1,
       shoulders: 1,
-      triceps: 0,
+      triceps: 0.5,
     }));
   it("applies override without changing anatomy", () => {
     expect(
       attribution(ex, defaults, {
         exerciseId: "test",
-        weights: { triceps: 0.5 },
+        weights: { triceps: 0.25 },
         updatedAt: "",
       }).triceps,
-    ).toBe(0.5);
+    ).toBe(0.25);
     expect(ex.secondaryMuscles).toEqual(["triceps", "chest"]);
   });
   it("reconciles overlapping exercises and multiple primaries", () => {
     const a = aggregate([set(attribution(ex, defaults)), set({ chest: 1 }, 3)]);
     expect(a.performed).toBe(8);
-    expect(a.totals).toEqual({ chest: 8, shoulders: 5, triceps: 0 });
+    expect(a.totals).toEqual({ chest: 8, shoulders: 5, triceps: 2.5 });
   });
   it.each([
     [19, "Below target"],
