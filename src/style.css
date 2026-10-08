@@ -635,3 +635,8 @@ li {
     grid-column: auto;
   }
 }
+
+/* Exercise history stays readable on narrow screens. */
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: left; padding: .65rem; border-bottom: 1px solid #ddd; }
+nav a { min-width: 0; }

@@ -97,3 +97,25 @@ Sources: [Free Exercise DB](https://github.com/yuhonas/free-exercise-db), distri
 ## Verification limits
 
 Automated Chromium tests exercise mobile-sized pages and offline reloads. Physical iOS/Android home-screen installation, multi-version service-worker upgrades and future database migrations require device/release testing. The initial release provides versioned infrastructure without inventing a second schema merely for a migration test.
+
+
+## Optional strength tracking
+
+Enable **Track strength for this exercise** in the set logger. It defaults off and remembers the choice per exercise; disabling it does not erase historical load records. Enter a positive load in lb or kg. Use a consistent convention, e.g., total barbell load or load per dumbbell. For bodyweight/assisted movements, use a separate custom exercise with a consistent meaningful load convention; the estimator does not infer body mass or assistance.
+
+The **Strength** tab shows chronological set history by exercise, load, repetitions, RIR, estimated 1RM, and overload flags. Pounds and kilograms are converted for comparisons. RIR-adjusted Epley is a heuristic: `load * (1 + (reps + RIR)/30)`, with a single rep at RIR 0 using recorded load. Estimates are withheld for rest-pause, zero reps, RIR > 4, and reps + RIR > 10. These limits are conservative app choices, not a validated applicability cutoff. Compare only within the same exercise and technique. Effective-rep attribution is independent of load and strength estimates.
+
+Overload flags compare with the latest comparable standard set from an earlier workout: same exercise, same RIR, and either the same reps or equivalent load. Increased load at matched reps/RIR or increased reps at matched load/RIR earns a flag. A flag records performance progression, not proof of physiological adaptation.
+
+## Supabase setup (required once before syncing works)
+
+1. Open the supplied project's **SQL Editor**, create a query, paste all of [`supabase/setup.sql`](supabase/setup.sql), and click **Run**. This creates an account-owned table, row-level security, and an atomic revision-checked save function. The public/publishable key embedded in the app cannot create database tables.
+2. In **Authentication → URL Configuration**, set **Site URL** to `https://alanrodrigueztiburcio.github.io/effective-reps/`. Add that same URL to allowed redirect URLs.
+3. Keep email/password authentication enabled. In the app's **Settings**, choose **Create account**, confirm the email if required, then sign in with the same credentials on computer and phone.
+4. Leave the app open and online on each device to sync. Changes poll every five seconds, also on focus and reconnection. Offline edits persist locally. Supabase availability and the free plan's service limits still apply.
+
+Sync uses one full JSON snapshot per account. Row-level security isolates accounts; no secret/service-role key is included. Three-way per-record merging preserves independent changes and deletions. Atomic revision checks reject stale writes. Conflicting edits to the same record, or concurrent independent active workouts, pause sync. Export local JSON before resolving. **Resolve using cloud version** downloads a local backup before restoring the cloud snapshot; reconcile needed changes from that backup manually. Complete/sync one active workout before starting a different one on another device.
+
+On first sign-in, local records merge with cloud records; local settings win when both browsers already have settings. Existing local attribution settings and logged sets are retained, including any old secondary credit of zero. A browser that has synced to one account cannot silently attach its local data to a different account. Export, sign out, and clear site data before changing account ownership. Sign-out retains local data.
+
+Test coverage includes calculation boundaries, unit conversion, legacy backups, independent sync edits, deletions, conflicting edits, and concurrent active workouts. Browser tests use a mocked Supabase API; live authentication/database access requires the setup above and has not been verified.

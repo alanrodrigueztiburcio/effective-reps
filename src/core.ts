@@ -54,6 +54,7 @@ export interface SetRecord {
   effectiveReps: number;
   weights: Weights;
   calculationVersion: "1";
+  strength?: { load: number; unit: "lb" | "kg" };
 }
 export interface Override {
   exerciseId: string;

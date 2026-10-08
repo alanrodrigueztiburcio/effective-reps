@@ -134,6 +134,8 @@ export function validateBackup(value: unknown): Backup {
   const sessions = new Set(b.sessions.map((s) => s.id));
   for (const s of b.sets) {
     weights(s.weights);
+    if (s.strength && (!Number.isFinite(s.strength.load) || s.strength.load <= 0 || !["lb", "kg"].includes(s.strength.unit)))
+      throw new Error("Invalid strength load or unit.");
     if (
       !sessions.has(s.sessionId) ||
       typeof s.exerciseId !== "string" ||

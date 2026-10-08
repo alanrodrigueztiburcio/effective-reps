@@ -24,6 +24,8 @@ import {
   exportBackup,
   restoreBackup,
 } from "./db";
+import { StrengthHistory } from "./StrengthHistory";
+import { SyncPanel } from "./SyncPanel";
 const catalog = raw as Exercise[];
 const categories = [
   "strength",
@@ -93,6 +95,12 @@ export default function App() {
   const [reps, setReps] = useState(10);
   const [rir, setRir] = useState(2);
   const [mini, setMini] = useState(0);
+  const [load, setLoad] = useState<number | "">("");
+  const [unit, setUnit] = useState<"lb" | "kg">("lb");
+  const [strengthEnabled, setStrengthEnabled] = useState(false);
+  useEffect(() => {
+    setStrengthEnabled(!!selected && (edit ? !!edit.strength : !!(settings.preferences.strengthExercises as Record<string, boolean> | undefined)?.[selected.id]));
+  }, [selected?.id, edit, settings.preferences]);
   const [type, setType] = useState<SetRecord["type"]>("standard");
   useEffect(() => {
     setEdit(null);
@@ -135,6 +143,7 @@ export default function App() {
   }
   function pick(e: Exercise) {
     setSelected(e);
+    setLoad("");
     setQuery("");
     setDetail(null);
     if (page !== "history") location.hash = "workout";
@@ -160,6 +169,8 @@ export default function App() {
     setRir(s.rir);
     setMini(s.miniReps);
     setType(s.type);
+    setLoad(s.strength?.load ?? "");
+    setUnit(s.strength?.unit ?? "lb");
   }
   async function log() {
     if (!selected || !session)
@@ -168,6 +179,7 @@ export default function App() {
       throw new Error(
         "Effective repetitions are unavailable for cardio and stretching.",
       );
+    if (strengthEnabled && (load === "" || !Number.isFinite(load) || load <= 0)) throw new Error("Enter a positive load.");
     const unchanged = edit?.exerciseId === selected.id;
     await saveSet({
       id: edit?.id || crypto.randomUUID(),
@@ -190,6 +202,7 @@ export default function App() {
             overrides.find((o) => o.exerciseId === selected.id),
           ),
       calculationVersion: "1",
+      strength: strengthEnabled ? { load: Number(load), unit } : undefined,
     });
     setEdit(null);
     setMini(0);
@@ -312,10 +325,13 @@ export default function App() {
                   ? "Exercise directory"
                   : page === "history"
                     ? "Workout history"
-                    : "Your settings"}
+                    : page === "strength"
+                      ? "Strength progression"
+                      : "Your settings"}
             </h1>
           </div>
         </div>
+        <SyncPanel visible={page === "settings"} />
         {message && (
           <div role="status" className="notice">
             {message}
@@ -343,7 +359,7 @@ export default function App() {
             <button disabled={busy} onClick={() => run(() => startSession())}>
               Start workout →
             </button>
-            <p className="muted">No account. Records stay on this device.</p>
+            <p className="muted">Works offline. Optional account syncing in Settings.</p>
           </section>
         )}
         {((page === "workout" && active) ||
@@ -440,6 +456,15 @@ export default function App() {
                         ))}
                       </ol>
                     </details>
+                    <label className="weight-row">
+                      Track strength for this exercise
+                      <input type="checkbox" checked={strengthEnabled} onChange={e => {
+                        const enabled = e.target.checked;
+                        setStrengthEnabled(enabled);
+                        if (edit) setEdit({...edit, strength: enabled ? {load: Number(load) || 1, unit} : undefined});
+                        run(() => db.settings.put({...settings, preferences: {...settings.preferences, strengthExercises: {...(settings.preferences.strengthExercises as object || {}), [selected.id]: enabled}}}));
+                      }} />
+                    </label>
                     <div className="segmented">
                       <button
                         className={type === "standard" ? "chosen" : ""}
@@ -460,6 +485,10 @@ export default function App() {
                         run(log, edit ? "Set updated." : "Set logged.");
                       }}
                     >
+                      {strengthEnabled && <div className="entry">
+                        <label>Load<input type="number" min="0.01" step="any" required value={load} onChange={e => setLoad(e.target.value === "" ? "" : e.target.valueAsNumber)} /></label>
+                        <label>Unit<select value={unit} onChange={e => setUnit(e.target.value as "lb" | "kg")}><option>lb</option><option>kg</option></select></label>
+                      </div>}
                       <div className="entry">
                         <label>
                           {type === "standard"
@@ -600,7 +629,7 @@ export default function App() {
                   <div>
                     <strong>{s.exerciseName}</strong>
                     <p>
-                      {s.reps} reps · RIR {s.rir >= 6 ? "5+" : s.rir}
+                      {s.strength ? `${s.strength.load} ${s.strength.unit} · ` : ""}{s.reps} reps · RIR {s.rir >= 6 ? "5+" : s.rir}
                       {s.type === "rest-pause"
                         ? ` · ${s.miniReps} mini-set reps`
                         : ""}
@@ -684,8 +713,10 @@ export default function App() {
             })}
           </section>
         )}
+        {page === "strength" && <StrengthHistory sets={allSets} />}
         {page === "settings" && (
           <div className="settings-grid">
+
             <section className="card">
               <h2>Training targets</h2>
               <form
@@ -767,7 +798,7 @@ export default function App() {
               <h2>Backup & restore</h2>
               <p>
                 Records stay in this browser. Clearing site data can erase them.
-                Devices do not synchronize; export backups for recovery or
+                Sign in above to synchronize devices; export backups for recovery or
                 migration. Installation does not guarantee permanent storage.
               </p>
               <button
@@ -886,6 +917,7 @@ export default function App() {
           ["workout", "◈", "Workout"],
           ["exercises", "⌕", "Exercises"],
           ["history", "◷", "History"],
+          ["strength", "↗", "Strength"],
           ["settings", "⚙", "Settings"],
         ].map(([id, icon, label]) => (
           <a className={page === id ? "active" : ""} key={id} href={"#" + id}>
