@@ -33,6 +33,7 @@ export function improvement(
       !s.plan?.warmup &&
       s.id !== current.id &&
       s.exerciseId === current.exerciseId &&
+      s.plan?.side === current.plan?.side &&
       s.sessionId !== current.sessionId &&
       setTime(s) < setTime(current) &&
       s.strength &&

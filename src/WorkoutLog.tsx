@@ -1,4 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  alternatingSets,
+  duplicateSets,
+  exerciseGroup,
+  moveExercise,
+  setLabels,
+} from "./workoutOrder";
 import {
   aggregate,
   type Exercise,
@@ -108,9 +115,11 @@ function SetRow({
   move,
   start,
   onError,
+  number,
 }: {
   set: SetRecord;
   index: number;
+  number: string;
   save: (s: SetRecord, startRest?: boolean) => void;
   duplicate: (s: SetRecord) => void;
   remove: () => void;
@@ -134,7 +143,7 @@ function SetRow({
           : String(set.reps)),
     );
   }, [JSON.stringify(set)]);
-  const label = `Set ${index + 1}`,
+  const label = `Set ${number}`,
     plan = planOf(draft);
   function current(): SetRecord {
     if (actual.trim() && !/^\d+(?:\s*,\s*\d+)*$/.test(actual.trim()))
@@ -161,7 +170,7 @@ function SetRow({
         if (!e.currentTarget.contains(e.relatedTarget)) commit();
       }}
     >
-      <th scope="row">{index + 1}</th>
+      <th scope="row">{number}</th>
       <PlanCells
         plan={plan}
         change={(p) => setDraft({ ...draft, plan: p })}
@@ -222,7 +231,7 @@ function SetRow({
         <button
           className="secondary"
           onClick={() =>
-            start(plan.restSeconds, `${set.exerciseName} · set ${index + 1}`)
+            start(plan.restSeconds, `${set.exerciseName} · set ${number}`)
           }
         >
           Rest
@@ -297,10 +306,33 @@ export function WorkoutLog({
   clearSelected: () => void;
 }) {
   const [query, setQuery] = useState(""),
+    [plus, setPlus] = useState<string | null>(null),
+    [partner, setPartner] = useState<string | null>(null),
+    [partnerQuery, setPartnerQuery] = useState(""),
+    [dragging, setDragging] = useState<string | null>(null),
+    [dropTarget, setDropTarget] = useState<string | null>(null),
     [name, setName] = useState(session.templateSnapshot?.name || ""),
     [auto, setAuto] = useState(
       () => localStorage.getItem("effective-reps-auto-rest") === "true",
     );
+  const drag = useRef<{
+    id: string;
+    start: number;
+    active: boolean;
+    target: string | null;
+    after: boolean;
+    y: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!dragging) return;
+    const id = setInterval(() => {
+      const state = drag.current;
+      if (!state?.active) return;
+      if (state.y < 90) window.scrollBy(0, -15);
+      else if (state.y > window.innerHeight - 170) window.scrollBy(0, 15);
+    }, 60);
+    return () => clearInterval(id);
+  }, [dragging]);
   const [timer, setTimer] = useState<{
     end: number;
     remaining: number;
@@ -342,12 +374,52 @@ export function WorkoutLog({
       ]),
     ).entries(),
   ];
-  async function add(ex: Exercise) {
+  async function add(ex: Exercise, pairedWith?: string) {
     if (["cardio", "stretching"].includes(ex.category))
       throw new Error(
         "Effective-rep logging is available for resistance exercises.",
       );
     const group = crypto.randomUUID();
+    if (pairedWith) {
+      await db.transaction("rw", [db.sets, db.sessions], async () => {
+        const current = (
+          await db.sets.where("sessionId").equals(session.id).toArray()
+        ).sort((a, b) => a.sequence - b.sequence);
+        const originals = current.filter(
+          (s) => exerciseGroup(s) === pairedWith,
+        );
+        if (!originals.length) throw new Error("Exercise no longer exists.");
+        const supersetId = originals[0].supersetId || crypto.randomUUID();
+        const next = current.map((s) =>
+          exerciseGroup(s) === pairedWith ? { ...s, supersetId } : s,
+        );
+        const last = Math.max(
+          ...next.map((s, i) => (s.supersetId === supersetId ? i : -1)),
+        );
+        const rounds = new Set(
+          [...setLabels(originals).values()].map((label) =>
+            label.replace(/[LR]$/, ""),
+          ),
+        ).size;
+        const additions = Array.from({ length: rounds }, () => ({
+          ...plannedSet(
+            session,
+            ex,
+            blankPlan(),
+            0,
+            settings,
+            overrides.find((o) => o.exerciseId === ex.id),
+            group,
+          ),
+          supersetId,
+        }));
+        next.splice(last + 1, 0, ...additions);
+        await reorder(next);
+      });
+      setPartner(null);
+      setPartnerQuery("");
+      return;
+    }
     await saveSet(
       normalizeSet(
         plannedSet(
@@ -393,20 +465,58 @@ export function WorkoutLog({
       await db.sets.where("sessionId").equals(session.id).toArray()
     ).sort((a, b) => a.sequence - b.sequence);
     s = next.find((x) => x.id === s.id) || s;
-    const at = next.findIndex((x) => x.id === s.id);
-    next.splice(
-      at + 1,
-      0,
-      normalizeSet({
-        ...s,
-        id: crypto.randomUUID(),
-        completed: false,
-        bouts: [],
-        actualRir: null,
-        createdAt: now(),
-      }),
-    );
-    await reorder(next);
+    await reorder(duplicateSets(next, s));
+  }
+  async function moveGroup(id: string, target: string, after = false) {
+    await db.transaction("rw", [db.sets, db.sessions], async () => {
+      const current = (
+        await db.sets.where("sessionId").equals(session.id).toArray()
+      ).sort((a, b) => a.sequence - b.sequence);
+      await reorder(moveExercise(current, id, target, after));
+    });
+  }
+  function shiftGroup(id: string, direction: number) {
+    const target =
+      groups[groups.findIndex(([group]) => group === id) + direction]?.[0];
+    if (target) run(() => moveGroup(id, target, direction > 0));
+  }
+  function dragMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const state = drag.current;
+    if (!state) return;
+    state.y = e.clientY;
+    if (Math.abs(e.clientY - state.start) > 6) {
+      state.active = true;
+      setDragging(state.id);
+    }
+    if (!state.active) return;
+    if (e.clientY < 90) window.scrollBy(0, -20);
+    else if (e.clientY > window.innerHeight - 170) window.scrollBy(0, 20);
+    const hit = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest<HTMLElement>("[data-workout-group]");
+    // During scrolling the pointer can land in a gap above/between cards.
+    // Use the closest vertical card so a valid drag does not lose its destination.
+    const distance = (card: HTMLElement) => {
+      const rect = card.getBoundingClientRect();
+      return e.clientY < rect.top
+        ? rect.top - e.clientY
+        : e.clientY > rect.bottom
+          ? e.clientY - rect.bottom
+          : 0;
+    };
+    const card =
+      hit ||
+      Array.from(
+        document.querySelectorAll<HTMLElement>("[data-workout-group]"),
+      ).sort((a, b) => distance(a) - distance(b))[0];
+    const target = card?.dataset.workoutGroup;
+    state.target = target && target !== state.id ? target : null;
+    state.after =
+      !!card &&
+      e.clientY >
+        card.getBoundingClientRect().top +
+          card.getBoundingClientRect().height / 2;
+    setDropTarget(state.target);
   }
   async function saveTemplate() {
     if (!name.trim() || !sets.length)
@@ -434,6 +544,7 @@ export function WorkoutLog({
         reps: Number(planOf(rows[0]).targetReps.split(/[-–]/)[0]) || 1,
         rir: planOf(rows[0]).targetRir ?? 0,
         setPlans: rows.map((s) => structuredClone(planOf(s))),
+        supersetId: rows[0].supersetId,
       };
     });
     const date = now();
@@ -482,17 +593,222 @@ export function WorkoutLog({
         const rows = sets.filter(
           (s) => (s.groupId || s.templateItemId || s.exerciseId) === id,
         );
+        const labels = setLabels(rows),
+          position = groups.findIndex(([group]) => group === id);
+        const superset = rows[0].supersetId;
+        const linked = superset
+          ? groups.filter(([group]) =>
+              sets.some(
+                (s) => exerciseGroup(s) === group && s.supersetId === superset,
+              ),
+            )
+          : [];
+        const supersetIds = [
+          ...new Set(sets.map((s) => s.supersetId).filter(Boolean)),
+        ];
         return (
-          <section className="card exercise-table" key={id}>
+          <section
+            className={`card exercise-table ${dragging === id ? "exercise-dragging" : ""} ${dropTarget === id ? "exercise-drop-target" : ""}`}
+            key={id}
+            data-workout-group={id}
+          >
             <div className="section-title">
-              <h2>{title}</h2>
               <button
-                className="secondary"
-                onClick={() => run(() => copy(rows.at(-1)!))}
+                className="exercise-drag-handle secondary"
+                aria-label={`Drag ${title}`}
+                title="Drag to reorder; arrow keys move the exercise"
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                    e.preventDefault();
+                    shiftGroup(id, e.key === "ArrowUp" ? -1 : 1);
+                  }
+                }}
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  drag.current = {
+                    id,
+                    start: e.clientY,
+                    active: false,
+                    target: null,
+                    after: false,
+                    y: e.clientY,
+                  };
+                }}
+                onPointerMove={dragMove}
+                onPointerUp={(e) => {
+                  if (drag.current?.active) dragMove(e);
+                  const state = drag.current;
+                  if (state?.active && state.target)
+                    run(() => moveGroup(state.id, state.target!, state.after));
+                  drag.current = null;
+                  setDragging(null);
+                  setDropTarget(null);
+                  if (e.currentTarget.hasPointerCapture(e.pointerId))
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                }}
+                onPointerCancel={() => {
+                  drag.current = null;
+                  setDragging(null);
+                  setDropTarget(null);
+                }}
               >
-                Add set
+                ⠿
               </button>
+              <h2>{title}</h2>
+              <div className="exercise-header-actions">
+                <button
+                  className="secondary"
+                  aria-label={`Move ${title} up`}
+                  disabled={position === 0}
+                  onClick={() => shiftGroup(id, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  className="secondary"
+                  aria-label={`Move ${title} down`}
+                  disabled={position === groups.length - 1}
+                  onClick={() => shiftGroup(id, 1)}
+                >
+                  ↓
+                </button>
+                <button
+                  className="secondary"
+                  aria-label={`Add to ${title}`}
+                  aria-expanded={plus === id}
+                  onClick={() => setPlus(plus === id ? null : id)}
+                >
+                  +
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => run(() => copy(rows.at(-1)!))}
+                >
+                  Add set
+                </button>
+              </div>
             </div>
+            {plus === id && (
+              <div
+                className="exercise-plus-menu"
+                role="group"
+                aria-label={`Add options for ${title}`}
+              >
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setPartner(id);
+                    setPartnerQuery("");
+                    setPlus(null);
+                  }}
+                >
+                  Add another exercise
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setPlus(null);
+                    run(async () => {
+                      const current = (
+                        await db.sets
+                          .where("sessionId")
+                          .equals(session.id)
+                          .toArray()
+                      ).sort((a, b) => a.sequence - b.sequence);
+                      await reorder(alternatingSets(current, id));
+                    });
+                  }}
+                >
+                  Add alternating sets
+                </button>
+              </div>
+            )}
+            {partner === id && (
+              <div className="superset-picker">
+                <h3>Add a superset exercise</h3>
+                <p>
+                  Each exercise keeps its own load and reps. Alternate between
+                  exercises each round.
+                </p>
+                <label>
+                  Superset exercise
+                  <input
+                    aria-label={`Superset exercise for ${title}`}
+                    value={partnerQuery}
+                    onChange={(e) => setPartnerQuery(e.target.value)}
+                  />
+                </label>
+                {partnerQuery &&
+                  exercises
+                    .filter(
+                      (e) =>
+                        !["cardio", "stretching"].includes(e.category) &&
+                        e.name
+                          .toLowerCase()
+                          .includes(partnerQuery.toLowerCase()),
+                    )
+                    .slice(0, 15)
+                    .map((ex) => (
+                      <button
+                        key={ex.id}
+                        className="secondary"
+                        onClick={() => run(() => add(ex, id))}
+                      >
+                        Pair with {ex.name}
+                      </button>
+                    ))}
+                <button
+                  className="text-button"
+                  onClick={() => setPartner(null)}
+                >
+                  Cancel pairing
+                </button>
+              </div>
+            )}
+            {linked.length > 1 && (
+              <p className="superset-badge">
+                Superset {supersetIds.indexOf(superset) + 1} ·{" "}
+                {String.fromCharCode(
+                  65 + linked.findIndex(([group]) => group === id),
+                )}{" "}
+                · {linked.map(([, name]) => name).join(" + ")}
+                <button
+                  className="text-button"
+                  aria-label={`Unlink ${title} from superset`}
+                  onClick={() =>
+                    run(async () => {
+                      await db.transaction(
+                        "rw",
+                        [db.sets, db.sessions],
+                        async () => {
+                          const current = await db.sets
+                            .where("sessionId")
+                            .equals(session.id)
+                            .toArray();
+                          await db.sets.bulkPut(
+                            current
+                              .filter((s) => exerciseGroup(s) === id)
+                              .map((s) => ({ ...s, supersetId: undefined })),
+                          );
+                          await db.sessions.update(session.id, {
+                            updatedAt: now(),
+                          });
+                        },
+                      );
+                    })
+                  }
+                >
+                  Unlink
+                </button>
+              </p>
+            )}
+            {rows.some((s) => planOf(s).side) && (
+              <p className="muted">
+                Alternating sides · Each side logs its own reps, RIR, timer, and
+                stimulus. Copy or Add set creates a new left/right pair.
+              </p>
+            )}
             <p className="muted">
               Scroll the table horizontally to edit flags, rest, and completion.
             </p>
@@ -525,6 +841,7 @@ export function WorkoutLog({
                       key={s.id}
                       set={s}
                       index={i}
+                      number={labels.get(s.id)!}
                       save={save}
                       start={start}
                       onError={(error) =>

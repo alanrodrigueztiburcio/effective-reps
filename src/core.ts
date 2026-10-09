@@ -52,6 +52,7 @@ export interface TemplateItem {
   reps: number;
   rir: number;
   setPlans?: SetPlan[];
+  supersetId?: string;
 }
 export interface SetPlan {
   loadText: string;
@@ -62,6 +63,8 @@ export interface SetPlan {
   restPause: boolean;
   trackStrength: boolean;
   restSeconds: number;
+  side?: "L" | "R";
+  pairId?: string;
 }
 export interface WorkoutTemplate {
   id: string;
@@ -103,6 +106,7 @@ export interface SetRecord {
   bouts?: number[];
   actualRir?: number | null;
   groupId?: string;
+  supersetId?: string;
 }
 export interface Override {
   exerciseId: string;

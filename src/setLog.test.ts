@@ -144,7 +144,7 @@ it("round-trips blank and multi-bout rows and rejects inconsistent backups", asy
       }),
     ]);
     const backup = await exportBackup(d);
-    expect(backup.schemaVersion).toBe(3);
+    expect(backup.schemaVersion).toBe(4);
     validateBackup(backup);
     await restoreBackup(backup, "replace", other);
     expect((await exportBackup(other)).sets).toEqual(backup.sets);

@@ -1,5 +1,173 @@
 import { test, expect } from "@playwright/test";
 const base = process.env.BASE_PATH || "/effective-reps/";
+test("touch drag reorders exercise tables", async ({ browser }) => {
+  const context = await browser.newContext({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto("http://127.0.0.1:4173" + base);
+    await page
+      .getByRole("button", { name: "Start workout", exact: true })
+      .click();
+    const first = "Barbell Bench Press - Medium Grip",
+      second = "Dumbbell Bicep Curl";
+    for (const name of [first, second]) {
+      await page.getByLabel("Search exercises", { exact: true }).fill(name);
+      await page
+        .getByRole("button", { name: "Select", exact: true })
+        .first()
+        .click();
+    }
+    const handle = page.getByRole("button", {
+      name: `Drag ${second}`,
+      exact: true,
+    });
+    await handle.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    const box = (await handle.boundingBox())!,
+      cdp = await context.newCDPSession(page);
+    const x = box.x + box.width / 2,
+      y = box.y + box.height / 2;
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x, y, id: 1 }],
+    });
+    const target = page
+      .locator(".exercise-table")
+      .filter({ has: page.getByRole("heading", { name: first, exact: true }) });
+    await target.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x, y: 100, id: 1 }],
+    });
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect(page.locator(".exercise-table h2").first()).toHaveText(second);
+  } finally {
+    await context.close();
+  }
+});
+test("exercise drag order, supersets and alternating pairs survive template reuse", async ({
+  page,
+}) => {
+  await page.goto(base);
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
+  const curl = "Dumbbell Bicep Curl",
+    bench = "Barbell Bench Press - Medium Grip";
+  await page.getByLabel("Search exercises", { exact: true }).fill(curl);
+  await page
+    .getByRole("button", { name: "Select", exact: true })
+    .first()
+    .click();
+  const curlCard = page
+    .locator(".exercise-table")
+    .filter({ has: page.getByRole("heading", { name: curl, exact: true }) });
+  await curlCard
+    .getByRole("button", { name: `Add to ${curl}`, exact: true })
+    .click();
+  await curlCard
+    .getByRole("button", { name: "Add alternating sets", exact: true })
+    .click();
+  await expect(
+    curlCard.getByRole("rowheader", { name: "1L", exact: true }),
+  ).toBeVisible();
+  await expect(
+    curlCard.getByRole("rowheader", { name: "1R", exact: true }),
+  ).toBeVisible();
+  await curlCard.getByLabel("Set 1L load", { exact: true }).fill("20");
+  await curlCard.getByLabel("Set 1L actual reps", { exact: true }).fill("8");
+  await curlCard.getByLabel("Set 1L RIR", { exact: true }).fill("0");
+  await curlCard.getByLabel("Set 1L completed", { exact: true }).check();
+  await curlCard.getByRole("button", { name: "Add set", exact: true }).click();
+  await expect(
+    curlCard.getByRole("rowheader", { name: "2L", exact: true }),
+  ).toBeVisible();
+  await expect(
+    curlCard.getByRole("rowheader", { name: "2R", exact: true }),
+  ).toBeVisible();
+  await curlCard
+    .getByRole("button", { name: `Add to ${curl}`, exact: true })
+    .click();
+  await curlCard
+    .getByRole("button", { name: "Add another exercise", exact: true })
+    .click();
+  await curlCard
+    .getByLabel(`Superset exercise for ${curl}`, { exact: true })
+    .fill(bench);
+  await curlCard
+    .getByRole("button", { name: `Pair with ${bench}`, exact: true })
+    .click();
+  await expect(page.locator(".superset-badge")).toHaveCount(2);
+  const benchCard = page
+    .locator(".exercise-table")
+    .filter({ has: page.getByRole("heading", { name: bench, exact: true }) });
+  // Real pointer movement uses the same touch-compatible drag handle as phones.
+  await benchCard
+    .getByRole("button", { name: `Drag ${bench}`, exact: true })
+    .evaluate((el) => el.scrollIntoView({ block: "center" }));
+  const from = await benchCard
+    .getByRole("button", { name: `Drag ${bench}`, exact: true })
+    .boundingBox();
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
+  await page.mouse.down();
+  await curlCard.evaluate((el) => el.scrollIntoView({ block: "start" }));
+  const to = await curlCard.boundingBox();
+  await page.mouse.move(to!.x + 30, to!.y + 25, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator(".exercise-table h2").first()).toHaveText(bench);
+  await benchCard
+    .getByRole("button", { name: `Move ${bench} down`, exact: true })
+    .click();
+  await expect(page.locator(".exercise-table h2").first()).toHaveText(curl);
+  await page.reload();
+  await expect(
+    curlCard.getByLabel("Set 1L actual reps", { exact: true }),
+  ).toHaveValue("8");
+  await expect(page.locator(".superset-badge")).toHaveCount(2);
+  await page.getByLabel("Workout template name").fill("Superset pairs");
+  await page
+    .getByRole("button", { name: "Save workout as template", exact: true })
+    .click();
+  await expect(
+    page.getByText("Workout template saved.", { exact: false }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/mobile-paired-workout.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Complete workout", exact: true })
+    .click();
+  await page.getByRole("link", { name: "Training", exact: true }).click();
+  await page
+    .getByLabel("Workout template", { exact: true })
+    .selectOption({ label: "Superset pairs" });
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
+  await expect(
+    curlCard.getByLabel("Set 1L actual reps", { exact: true }),
+  ).toHaveValue("");
+  await expect(curlCard.getByLabel("Set 1R RIR", { exact: true })).toHaveValue(
+    "",
+  );
+  await expect(page.locator(".superset-badge")).toHaveCount(2);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await benchCard
+    .getByRole("button", { name: `Unlink ${bench} from superset`, exact: true })
+    .click();
+  await expect(page.locator(".superset-badge")).toHaveCount(0);
+});
 test("spreadsheet sets, independent flags, rest timer and full workout templates", async ({
   page,
 }) => {

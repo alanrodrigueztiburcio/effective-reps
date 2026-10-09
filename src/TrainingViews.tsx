@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PlanCells, PlanFlags } from "./WorkoutLog";
 import { plansFor } from "./setLog";
+import { planLabels, resizePlans } from "./workoutOrder";
 import type {
   Exercise,
   Mesocycle,
@@ -189,14 +190,9 @@ export function TemplateManager({
         const plans = plansFor(x);
         const setPlans =
           field === "sets"
-            ? Array.from(
-                {
-                  length: Math.max(
-                    1,
-                    Math.min(100, Number.isFinite(value) ? value : 1),
-                  ),
-                },
-                (_, i) => structuredClone(plans[i] || plans.at(-1)!),
+            ? resizePlans(
+                plans,
+                Math.max(1, Math.min(100, Number.isFinite(value) ? value : 1)),
               )
             : plans.map((p) => ({
                 ...p,
@@ -354,10 +350,11 @@ export function TemplateManager({
                                 : x,
                             ),
                           );
-                        const label = `Planned set ${n + 1}`;
+                        const number = planLabels(plansFor(item))[n];
+                        const label = `Planned set ${number}`;
                         return (
                           <tr key={n}>
-                            <th scope="row">{n + 1}</th>
+                            <th scope="row">{number}</th>
                             <PlanCells
                               plan={plan}
                               change={changePlan}

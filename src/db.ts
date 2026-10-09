@@ -113,8 +113,8 @@ export async function startSession(
         for (const item of template.items) {
           const override = await database.overrides.get(item.exercise.id);
           for (const plan of plansFor(item))
-            await database.sets.add(
-              plannedSet(
+            await database.sets.add({
+              ...plannedSet(
                 session,
                 item.exercise,
                 plan,
@@ -124,7 +124,8 @@ export async function startSession(
                 item.id,
                 item.id,
               ),
-            );
+              supersetId: item.supersetId,
+            });
         }
       }
       return id;
@@ -176,7 +177,7 @@ export async function saveSet(record: SetRecord) {
   });
 }
 export interface Backup {
-  schemaVersion: 1 | 2 | 3;
+  schemaVersion: 1 | 2 | 3 | 4;
   exportedAt: string;
   sessions: Session[];
   sets: SetRecord[];
@@ -199,7 +200,7 @@ export async function exportBackup(database = db): Promise<Backup> {
       database.mesocycles,
     ],
     async () => ({
-      schemaVersion: 3,
+      schemaVersion: 4,
       exportedAt: now(),
       sessions: await database.sessions.toArray(),
       sets: await database.sets.toArray(),
@@ -228,7 +229,7 @@ function date(value: unknown) {
 }
 export function validateBackup(value: unknown): Backup {
   const b = value as Backup;
-  if (!b || ![1, 2, 3].includes(b.schemaVersion) || !date(b.exportedAt))
+  if (!b || ![1, 2, 3, 4].includes(b.schemaVersion) || !date(b.exportedAt))
     throw new Error("Unsupported or malformed backup.");
   if (
     b.schemaVersion >= 2 &&
@@ -293,6 +294,11 @@ export function validateBackup(value: unknown): Backup {
   if (active > 1) throw new Error("Multiple active workouts.");
   const sessions = new Set(b.sessions.map((s) => s.id));
   for (const s of b.sets) {
+    if (
+      s.supersetId !== undefined &&
+      (typeof s.supersetId !== "string" || !s.supersetId)
+    )
+      throw new Error("Invalid superset reference.");
     weights(s.weights);
     if (s.plan) {
       validatePlan(s.plan);

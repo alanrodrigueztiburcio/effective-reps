@@ -852,3 +852,51 @@ nav a {
   font-size: 13px;
   font-weight: 500;
 }
+.exercise-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.exercise-header-actions button {
+  padding: 8px 12px;
+}
+.exercise-drag-handle {
+  touch-action: none;
+  cursor: grab;
+  padding: 6px 10px;
+}
+.exercise-table > .section-title {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.exercise-table > .section-title h2 {
+  flex: 1;
+  min-width: 140px;
+}
+.exercise-dragging {
+  opacity: 0.6;
+}
+.exercise-drop-target {
+  outline: 3px solid #6d8f62;
+}
+.exercise-plus-menu,
+.superset-picker {
+  padding: 12px;
+  margin-top: 12px;
+  background: #f1f5ec;
+  border-radius: 10px;
+}
+.exercise-plus-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.superset-picker button {
+  margin: 4px;
+}
+.superset-badge {
+  background: #e5ecf5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}

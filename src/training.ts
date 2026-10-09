@@ -51,6 +51,11 @@ export function validateItems(items: TemplateItem[]) {
   )
     throw new Error("A template needs exercises with unique row identifiers.");
   for (const item of items) {
+    if (
+      item.supersetId !== undefined &&
+      (typeof item.supersetId !== "string" || !item.supersetId)
+    )
+      throw new Error("Invalid superset reference.");
     if (item.setPlans !== undefined) {
       if (
         !Array.isArray(item.setPlans) ||

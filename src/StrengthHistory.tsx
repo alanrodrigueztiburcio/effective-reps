@@ -66,7 +66,8 @@ export function StrengthHistory({
       {!rows.length && <p>No strength sets logged yet.</p>}
       <p className="muted">
         Overload flags compare with earlier workouts, including earlier
-        mesocycles.
+        mesocycles, within the same exercise and side. L/R records are not
+        compared with unsided records.
       </p>
       <div style={{ overflowX: "auto" }}>
         <table>
@@ -74,6 +75,7 @@ export function StrengthHistory({
             <tr>
               <th scope="col">Performed date</th>
               <th scope="col">Load</th>
+              <th scope="col">Side</th>
               <th scope="col">Reps</th>
               <th scope="col">RIR</th>
               <th scope="col">Est. 1RM</th>
@@ -95,6 +97,7 @@ export function StrengthHistory({
                     {s.plan?.loadText || s.strength?.load}{" "}
                     {s.plan?.unit || s.strength?.unit}
                   </td>
+                  <td>{s.plan?.side || "—"}</td>
                   <td>
                     {s.bouts?.join(",") || s.reps}
                     {s.type === "rest-pause" && !s.bouts

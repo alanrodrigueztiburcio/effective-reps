@@ -42,6 +42,9 @@ export function validatePlan(p: SetPlan) {
     !Number.isInteger(p.restSeconds) ||
     p.restSeconds < 0 ||
     p.restSeconds > 86400 ||
+    (p.side !== undefined && !["L", "R"].includes(p.side)) ||
+    (p.pairId !== undefined && (typeof p.pairId !== "string" || !p.pairId)) ||
+    !!p.side !== !!p.pairId ||
     ![p.warmup, p.restPause, p.trackStrength].every(
       (x) => typeof x === "boolean",
     ) ||
