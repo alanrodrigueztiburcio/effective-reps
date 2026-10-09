@@ -1,3 +1,4 @@
+import { validatePlan } from "./setLog";
 import type {
   Mesocycle,
   Session,
@@ -50,6 +51,15 @@ export function validateItems(items: TemplateItem[]) {
   )
     throw new Error("A template needs exercises with unique row identifiers.");
   for (const item of items) {
+    if (item.setPlans !== undefined) {
+      if (
+        !Array.isArray(item.setPlans) ||
+        !item.setPlans.length ||
+        item.setPlans.length !== item.sets
+      )
+        throw new Error("Invalid set plans.");
+      item.setPlans.forEach(validatePlan);
+    }
     if (
       !item ||
       typeof item.id !== "string" ||

@@ -51,6 +51,17 @@ export interface TemplateItem {
   sets: number;
   reps: number;
   rir: number;
+  setPlans?: SetPlan[];
+}
+export interface SetPlan {
+  loadText: string;
+  unit: "lb" | "kg";
+  targetReps: string;
+  targetRir?: number;
+  warmup: boolean;
+  restPause: boolean;
+  trackStrength: boolean;
+  restSeconds: number;
 }
 export interface WorkoutTemplate {
   id: string;
@@ -87,6 +98,11 @@ export interface SetRecord {
   performedAt?: string;
   createdAt?: string;
   templateItemId?: string | null;
+  plan?: SetPlan;
+  completed?: boolean;
+  bouts?: number[];
+  actualRir?: number | null;
+  groupId?: string;
 }
 export interface Override {
   exerciseId: string;
@@ -143,6 +159,7 @@ export function attribution(
   return { ...w, ...override?.weights };
 }
 export function aggregate(sets: SetRecord[]) {
+  sets = sets.filter((s) => s.completed !== false);
   const totals: Weights = {};
   for (const s of sets)
     for (const [m, w] of Object.entries(s.weights))

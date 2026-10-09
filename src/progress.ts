@@ -56,7 +56,9 @@ export function progressGroups(
   );
   for (const [key, group] of result) {
     const ids = new Set(group.sessions.map((s) => s.id));
-    group.sets = sets.filter((s) => ids.has(s.sessionId));
+    group.sets = sets.filter(
+      (s) => ids.has(s.sessionId) && s.completed !== false,
+    );
     if (by === "week" && block)
       group.label = `Week ${key}${group.sessions.some((s) => sessionDay(s) < block.startDate || sessionDay(s) > block.endDate) ? " · outside plan" : ""}`;
   }
@@ -67,7 +69,11 @@ export function muscleSummary(group: ProgressGroup) {
 }
 export function exerciseSummary(group: ProgressGroup, exerciseId: string) {
   const sets = group.sets.filter(
-    (s) => s.exerciseId === exerciseId && s.strength,
+    (s) =>
+      s.exerciseId === exerciseId &&
+      s.strength &&
+      s.completed !== false &&
+      !s.plan?.warmup,
   );
   const estimates = sets
     .map(estimated1RM)

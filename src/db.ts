@@ -1,3 +1,4 @@
+import { plansFor, plannedSet, validatePlan, normalizeSet } from "./setLog";
 import Dexie, { type Table } from "dexie";
 import {
   type Session,
@@ -8,6 +9,7 @@ import {
   type WorkoutTemplate,
   type Mesocycle,
   defaults,
+  attribution,
   effective,
   muscles,
   validateSettings,
@@ -61,7 +63,14 @@ export async function startSession(
 ) {
   return database.transaction(
     "rw",
-    [database.sessions, database.templates, database.mesocycles],
+    [
+      database.sessions,
+      database.templates,
+      database.mesocycles,
+      database.sets,
+      database.settings,
+      database.overrides,
+    ],
     async () => {
       const active = await database.sessions
         .where("status")
@@ -97,6 +106,27 @@ export async function startSession(
         createdAt: date,
         updatedAt: date,
       });
+      if (template) {
+        const session = (await database.sessions.get(id))!;
+        const settings = (await database.settings.get("main")) || defaults;
+        let sequence = 0;
+        for (const item of template.items) {
+          const override = await database.overrides.get(item.exercise.id);
+          for (const plan of plansFor(item))
+            await database.sets.add(
+              plannedSet(
+                session,
+                item.exercise,
+                plan,
+                ++sequence,
+                settings,
+                override,
+                item.id,
+                item.id,
+              ),
+            );
+        }
+      }
       return id;
     },
   );
@@ -146,7 +176,7 @@ export async function saveSet(record: SetRecord) {
   });
 }
 export interface Backup {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   exportedAt: string;
   sessions: Session[];
   sets: SetRecord[];
@@ -169,7 +199,7 @@ export async function exportBackup(database = db): Promise<Backup> {
       database.mesocycles,
     ],
     async () => ({
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: now(),
       sessions: await database.sessions.toArray(),
       sets: await database.sets.toArray(),
@@ -198,10 +228,10 @@ function date(value: unknown) {
 }
 export function validateBackup(value: unknown): Backup {
   const b = value as Backup;
-  if (!b || ![1, 2].includes(b.schemaVersion) || !date(b.exportedAt))
+  if (!b || ![1, 2, 3].includes(b.schemaVersion) || !date(b.exportedAt))
     throw new Error("Unsupported or malformed backup.");
   if (
-    b.schemaVersion === 2 &&
+    b.schemaVersion >= 2 &&
     (!Array.isArray(b.templates) || !Array.isArray(b.mesocycles))
   )
     throw new Error("Missing training plans.");
@@ -211,7 +241,7 @@ export function validateBackup(value: unknown): Backup {
     "custom",
     "overrides",
     "settings",
-    ...(b.schemaVersion === 2 ? (["templates", "mesocycles"] as const) : []),
+    ...(b.schemaVersion >= 2 ? (["templates", "mesocycles"] as const) : []),
   ] as const) {
     if (!Array.isArray(b[key])) throw new Error(`Missing ${key}.`);
     const ids = b[key]!.map((r: any) =>
@@ -264,6 +294,21 @@ export function validateBackup(value: unknown): Backup {
   const sessions = new Set(b.sessions.map((s) => s.id));
   for (const s of b.sets) {
     weights(s.weights);
+    if (s.plan) {
+      validatePlan(s.plan);
+      if (typeof s.completed !== "boolean")
+        throw new Error("Invalid completion state.");
+      const expected = normalizeSet(s);
+      if (
+        expected.effectiveReps !== s.effectiveReps ||
+        expected.reps !== s.reps ||
+        expected.miniReps !== s.miniReps ||
+        expected.rir !== s.rir ||
+        JSON.stringify(expected.strength) !== JSON.stringify(s.strength)
+      )
+        throw new Error("Set fields disagree with recorded bouts or flags.");
+    }
+
     if (
       (s.performedAt !== undefined && !date(s.performedAt)) ||
       (s.createdAt !== undefined && !date(s.createdAt)) ||
@@ -289,7 +334,10 @@ export function validateBackup(value: unknown): Backup {
       s.sequence < 0 ||
       !["standard", "rest-pause"].includes(s.type) ||
       s.calculationVersion !== "1" ||
-      s.effectiveReps !== effective(s.reps, s.rir, s.miniReps, s.type) ||
+      s.effectiveReps !==
+        (s.completed === false
+          ? 0
+          : effective(s.reps, s.rir, s.miniReps, s.type)) ||
       (s.type === "standard" && s.miniReps !== 0)
     )
       throw new Error("Invalid set or session reference.");

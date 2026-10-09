@@ -13,7 +13,9 @@ export function StrengthHistory({
 }) {
   const [exercise, select] = useState("");
   const [unit, setUnit] = useState<"lb" | "kg">("lb");
-  const tracked = sets.filter((s) => s.strength);
+  const tracked = sets.filter(
+    (s) => (s.strength || s.plan?.trackStrength) && s.completed !== false,
+  );
   const exercises = [
     ...new Map(tracked.map((s) => [s.exerciseId, s.exerciseName])).entries(),
   ].sort((a, b) => a[1].localeCompare(b[1]));
@@ -26,9 +28,9 @@ export function StrengthHistory({
     <section className="card">
       <h2>Strength progression</h2>
       <p>
-        Enable strength tracking when logging an exercise. Use consistent
-        equipment, range of motion, and load convention (total barbell load or
-        per dumbbell).
+        Enable strength tracking on individual sets. Use consistent equipment,
+        range of motion, and load convention (total barbell load or per
+        dumbbell).
       </p>
       <label>
         Exercise
@@ -58,7 +60,8 @@ export function StrengthHistory({
         rep at RIR 0 uses the recorded load. Shown only for standard sets with
         reps + RIR ≤ 10 and RIR ≤ 4. Compare within the same exercise; this is
         not a measured maximum. Rest-pause sets remain in load history but do
-        not receive estimates or overload flags.
+        not receive estimates or overload flags. Warm-ups are labeled in history
+        and excluded from performance estimates and overload flags.
       </p>
       {!rows.length && <p>No strength sets logged yet.</p>}
       <p className="muted">
@@ -89,11 +92,14 @@ export function StrengthHistory({
                       : new Date(setTime(s)).toLocaleDateString()}
                   </td>
                   <td>
-                    {s.strength!.load} {s.strength!.unit}
+                    {s.plan?.loadText || s.strength?.load}{" "}
+                    {s.plan?.unit || s.strength?.unit}
                   </td>
                   <td>
-                    {s.reps}
-                    {s.type === "rest-pause" ? ` + ${s.miniReps} mini` : ""}
+                    {s.bouts?.join(",") || s.reps}
+                    {s.type === "rest-pause" && !s.bouts
+                      ? ` + ${s.miniReps} mini`
+                      : ""}
                   </td>
                   <td>{s.rir === 6 ? "5+" : s.rir}</td>
                   <td>
@@ -101,7 +107,11 @@ export function StrengthHistory({
                       ? "—"
                       : `${(estimate / (unit === "lb" ? 0.45359237 : 1)).toFixed(1)} ${unit}`}
                   </td>
-                  <td>{improvement(s, comparisonSets) || "—"}</td>
+                  <td>
+                    {s.plan?.warmup
+                      ? "Warm-up"
+                      : improvement(s, comparisonSets) || "—"}
+                  </td>
                 </tr>
               );
             })}

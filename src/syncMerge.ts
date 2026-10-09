@@ -23,7 +23,7 @@ export function mergeSnapshots(
   local: Backup,
   remote: Backup,
 ): Backup {
-  const result: Backup = { ...local, schemaVersion: 2 };
+  const result: Backup = { ...local, schemaVersion: 3 };
   for (const key of keys) {
     const index = (b: Backup | null) =>
       new Map((b?.[key] || []).map((r: any) => [r.id || r.exerciseId, r]));

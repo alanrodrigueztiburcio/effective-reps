@@ -70,7 +70,7 @@ export async function syncWorkouts(cloudOnly = false) {
       if (cloudOnly) downloadSnapshot(local, "before-cloud-restore");
       if (
         !remote ||
-        remote.schemaVersion !== 2 ||
+        remote.schemaVersion !== 3 ||
         fingerprint(merged) !== fingerprint(remote)
       ) {
         const { error } = await supabase.rpc("save_workout", {

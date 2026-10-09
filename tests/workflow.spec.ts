@@ -1,5 +1,114 @@
 import { test, expect } from "@playwright/test";
 const base = process.env.BASE_PATH || "/effective-reps/";
+test("spreadsheet sets, independent flags, rest timer and full workout templates", async ({
+  page,
+}) => {
+  await page.goto(base);
+  await page.getByLabel("Workout date", { exact: true }).fill("2026-10-08");
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
+  await page
+    .getByLabel("Search exercises")
+    .fill("Barbell Bench Press - Medium Grip");
+  await page
+    .getByRole("button", { name: "Select", exact: true })
+    .first()
+    .click();
+  await page.getByLabel("Set 1 load", { exact: true }).fill("135");
+  await page.getByLabel("Set 1 target reps", { exact: true }).fill("2–4");
+  await page.getByLabel("Set 1 warm-up", { exact: true }).check();
+  await page.getByLabel("Set 1 rest-pause", { exact: true }).check();
+  await page.getByLabel("Set 1 strength tracking", { exact: true }).check();
+  await page.getByLabel("Set 1 rest seconds", { exact: true }).fill("4");
+  await page.getByLabel("Set 1 actual reps", { exact: true }).fill("9,5,3");
+  await page.getByLabel("Set 1 RIR", { exact: true }).fill("0");
+  await page.getByLabel("Auto start on completion").check();
+  await page.getByLabel("Set 1 completed", { exact: true }).check();
+  await expect(
+    page.locator(".stats").getByText("13", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("timer")).toHaveText(/00:0[1-4]/);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const timerValue = await page.getByRole("timer").innerText();
+  await page.getByLabel("Set 1 duplicate", { exact: true }).click();
+  await expect(
+    page.getByLabel("Set 2 actual reps", { exact: true }),
+  ).toHaveValue("");
+  await expect(page.getByLabel("Set 2 RIR", { exact: true })).toHaveValue("");
+  await page.getByLabel("Set 2 load", { exact: true }).fill("BW + 20");
+  await page
+    .getByRole("heading", { name: "Add an exercise", exact: true })
+    .click();
+  await page.getByLabel("Set 2 move up", { exact: true }).click();
+  await expect(page.getByLabel("Set 1 load", { exact: true })).toHaveValue(
+    "BW + 20",
+  );
+  await page.reload();
+  await expect(page.getByRole("timer")).toHaveText(timerValue);
+  await expect(
+    page.getByLabel("Set 2 actual reps", { exact: true }),
+  ).toHaveValue("9,5,3");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  expect(
+    await page
+      .locator(".set-table-scroll")
+      .first()
+      .evaluate((el) => el.scrollWidth > el.clientWidth),
+  ).toBe(true);
+  await page.getByLabel("Workout template name").fill("Full body table");
+  await page
+    .getByRole("button", { name: "Save workout as template", exact: true })
+    .click();
+  await expect(
+    page.getByText("Workout template saved.", { exact: false }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/mobile-workout-table.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Complete workout", exact: true })
+    .click();
+  await expect(
+    page.getByText("Workout completed.", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Training", exact: true }).click();
+  await page
+    .getByLabel("Workout template", { exact: true })
+    .selectOption({ label: "Full body table" });
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
+  await expect(page.getByLabel("Set 1 load", { exact: true })).toHaveValue(
+    "BW + 20",
+  );
+  await expect(
+    page.getByLabel("Set 2 target reps", { exact: true }),
+  ).toHaveValue("2–4");
+  await expect(page.getByLabel("Set 2 warm-up", { exact: true })).toBeChecked();
+  await expect(
+    page.getByLabel("Set 2 rest-pause", { exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByLabel("Set 2 strength tracking", { exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByLabel("Set 2 actual reps", { exact: true }),
+  ).toHaveValue("");
+  await expect(page.getByLabel("Set 2 RIR", { exact: true })).toHaveValue("");
+  await expect(
+    page.locator(".stats").getByText("0/2", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Set 2 delete", { exact: true }).click();
+  await expect(
+    page.locator(".stats").getByText("0/1", { exact: true }),
+  ).toBeVisible();
+});
 test("mobile workout, edits, rest-pause, history, backups and offline persistence", async ({
   page,
   context,
@@ -15,22 +124,24 @@ test("mobile workout, edits, rest-pause, history, backups and offline persistenc
     .getByRole("button", { name: "Select", exact: true })
     .first()
     .click();
-  await page.getByRole("button", { name: "0", exact: true }).click();
-  await page.getByRole("button", { name: "Log set +" }).click();
-  await expect(page.getByText("Set logged.", { exact: false })).toBeVisible();
+  await page.getByLabel("Set 1 actual reps", { exact: true }).fill("10");
+  await page.getByLabel("Set 1 RIR", { exact: true }).fill("0");
+  await page.getByLabel("Set 1 completed", { exact: true }).check();
   await expect(
     page.locator(".stats").getByText("5", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
-  await page.getByLabel("Repetitions", { exact: true }).fill("3");
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByLabel("Set 1 actual reps", { exact: true }).fill("3");
+  await page
+    .getByRole("heading", { name: "Add an exercise", exact: true })
+    .click();
   await expect(
     page.locator(".stats").getByText("3", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Rest-pause", exact: true }).click();
-  await page.getByLabel("Activation reps").fill("10");
-  await page.getByLabel("Mini-set reps").fill("6");
-  await page.getByRole("button", { name: "Log set +" }).click();
+  await page.getByRole("button", { name: "Add set", exact: true }).click();
+  await page.getByLabel("Set 2 rest-pause", { exact: true }).check();
+  await page.getByLabel("Set 2 actual reps", { exact: true }).fill("10,3,3");
+  await page.getByLabel("Set 2 RIR", { exact: true }).fill("0");
+  await page.getByLabel("Set 2 completed", { exact: true }).check();
   await expect(
     page.locator(".stats").getByText("14", { exact: true }),
   ).toBeVisible();
@@ -173,12 +284,13 @@ test("optional strength history, matched-RIR progression, and two-device sync", 
     .getByRole("button", { name: "Select", exact: true })
     .first()
     .click();
-  await desktop.getByLabel("Track strength for this exercise").check();
-  await desktop.getByLabel("Load", { exact: true }).fill("100");
-  await desktop.getByLabel("Repetitions", { exact: true }).fill("5");
-  await desktop.getByRole("button", { name: "Log set +" }).click();
+  await desktop.getByLabel("Set 1 strength tracking", { exact: true }).check();
+  await desktop.getByLabel("Set 1 load", { exact: true }).fill("100");
+  await desktop.getByLabel("Set 1 actual reps", { exact: true }).fill("5");
+  await desktop.getByLabel("Set 1 RIR", { exact: true }).fill("2");
+  await desktop.getByLabel("Set 1 completed", { exact: true }).check();
   await expect(
-    desktop.locator(".set-log").getByText("100 lb · 5 reps · RIR 2"),
+    desktop.locator(".stats").getByText("1/1", { exact: true }),
   ).toBeVisible();
   await desktop.getByRole("button", { name: "Complete workout" }).click();
   await signIn(desktop);
@@ -201,12 +313,14 @@ test("optional strength history, matched-RIR progression, and two-device sync", 
     .getByRole("button", { name: "Select", exact: true })
     .first()
     .click();
+  await phone.getByLabel("Set 1 strength tracking", { exact: true }).check();
+  await phone.getByLabel("Set 1 load", { exact: true }).fill("105");
+  await phone.getByLabel("Set 1 actual reps", { exact: true }).fill("5");
+  await phone.getByLabel("Set 1 RIR", { exact: true }).fill("2");
+  await phone.getByLabel("Set 1 completed", { exact: true }).check();
   await expect(
-    phone.getByLabel("Track strength for this exercise"),
-  ).toBeChecked();
-  await phone.getByLabel("Load", { exact: true }).fill("105");
-  await phone.getByLabel("Repetitions", { exact: true }).fill("5");
-  await phone.getByRole("button", { name: "Log set +" }).click();
+    phone.locator(".stats").getByText("1/1", { exact: true }),
+  ).toBeVisible();
   await phone.getByRole("button", { name: "Complete workout" }).click();
   await phone.getByRole("link", { name: "Settings", exact: false }).click();
   await phone.getByRole("button", { name: "Sync now", exact: true }).click();
@@ -323,16 +437,20 @@ test("backdated template session, explicit block membership, immutable plans and
     page.getByText("Outside the planned date range.", { exact: false }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Start workout" }).click();
-  await page.getByRole("button", { name: "Log planned exercise" }).click();
-  await expect(page.getByLabel("Repetitions", { exact: true })).toHaveValue(
-    "8",
-  );
-  await page.getByLabel("Track strength for this exercise").check();
-  await page.getByLabel("Load", { exact: true }).fill("100");
-  await page.getByLabel("Repetitions", { exact: true }).fill("5");
-  await page.getByRole("button", { name: "Log set +" }).click();
   await expect(
-    page.getByText("1/3 sets logged · target 8 reps · RIR 1"),
+    page.getByLabel("Set 1 target reps", { exact: true }),
+  ).toHaveValue("8");
+  await expect(
+    page.getByLabel("Set 1 actual reps", { exact: true }),
+  ).toHaveValue("");
+  await expect(page.getByLabel("Set 1 RIR", { exact: true })).toHaveValue("");
+  await page.getByLabel("Set 1 strength tracking", { exact: true }).check();
+  await page.getByLabel("Set 1 load", { exact: true }).fill("100");
+  await page.getByLabel("Set 1 actual reps", { exact: true }).fill("5");
+  await page.getByLabel("Set 1 RIR", { exact: true }).fill("1");
+  await page.getByLabel("Set 1 completed", { exact: true }).check();
+  await expect(
+    page.locator(".stats").getByText("1/3", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Complete workout" }).click();
   await page.getByRole("link", { name: "Templates", exact: true }).click();
@@ -346,8 +464,8 @@ test("backdated template session, explicit block membership, immutable plans and
   await page.getByRole("link", { name: "History", exact: false }).click();
   await page.locator(".history-row").click();
   await expect(
-    page.getByText("1/3 sets logged · target 8 reps · RIR 1"),
-  ).toBeVisible();
+    page.getByLabel("Set 1 target reps", { exact: true }),
+  ).toHaveValue("8");
   await page.getByText("Workout date & mesocycle", { exact: true }).click();
   await page.getByLabel("Performed date", { exact: true }).fill("2026-09-10");
   await page.getByRole("button", { name: "Save workout details" }).click();
@@ -362,8 +480,8 @@ test("backdated template session, explicit block membership, immutable plans and
   );
   await expect(page.getByLabel("Assign mesocycle")).toHaveValue(/.+/);
   await expect(
-    page.getByText("1/3 sets logged · target 8 reps · RIR 1"),
-  ).toBeVisible();
+    page.getByLabel("Set 1 target reps", { exact: true }),
+  ).toHaveValue("8");
   await page.screenshot({
     path: "test-results/mobile-session-plan.png",
     fullPage: true,

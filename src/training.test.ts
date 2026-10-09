@@ -151,7 +151,8 @@ it("starts a backdated workout with a separate creation timestamp and independen
   expect(s.createdAt).not.toBe(s.performedAt);
   expect(s.mesocycleId).toBe("block");
   expect(s.templateSnapshot?.items[0].reps).toBe(5);
-  expect(await d.sets.count()).toBe(0);
+  expect(await d.sets.count()).toBe(3);
+  expect((await d.sets.toArray()).every(s=>s.completed===false && s.actualRir===null && s.bouts?.length===0 && s.effectiveReps===0)).toBe(true);
   await d.templates.update("push", {
     name: "New Push",
     items: [{ ...template.items[0], reps: 12 }],
@@ -202,7 +203,7 @@ it("round-trips templates, blocks, snapshots and optional membership", async () 
     dest = make();
   await restoreBackup(b, "replace", dest);
   const restored = await exportBackup(dest);
-  expect(restored.schemaVersion).toBe(2);
+  expect(restored.schemaVersion).toBe(3);
   expect(restored.templates).toEqual(b.templates);
   expect(restored.mesocycles).toEqual(b.mesocycles);
   expect(restored.sessions).toEqual(b.sessions);
@@ -253,7 +254,7 @@ it("syncs new tables and session snapshots with an old remote snapshot", async (
     mesocycles: undefined,
   };
   const merged = mergeSnapshots(old, local, old);
-  expect(merged.schemaVersion).toBe(2);
+  expect(merged.schemaVersion).toBe(3);
   expect(merged.templates).toEqual(local.templates);
   expect(merged.mesocycles).toEqual(local.mesocycles);
 });

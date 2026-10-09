@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { PlanCells, PlanFlags } from "./WorkoutLog";
+import { plansFor } from "./setLog";
 import type {
   Exercise,
   Mesocycle,
   Session,
-  SetRecord,
   TemplateItem,
   WorkoutTemplate,
 } from "./core";
@@ -58,6 +59,7 @@ export function StartWorkout({
         <label>
           Workout template
           <select
+            aria-label="Workout template"
             value={templateId}
             onChange={(e) => setTemplate(e.target.value)}
           >
@@ -92,7 +94,7 @@ export function StartWorkout({
             the selected block.
           </p>
         )}
-        <button>Start workout →</button>
+        <button>Start workout</button>
       </form>
       <p className="muted">
         Historical dates are supported. Works offline; optional syncing in
@@ -161,45 +163,6 @@ export function SessionDetails({
     </details>
   );
 }
-export function SessionPlan({
-  session,
-  sets,
-  pick,
-}: {
-  session: Session;
-  sets: SetRecord[];
-  pick: (item: TemplateItem) => void;
-}) {
-  if (!session.templateSnapshot) return null;
-  return (
-    <section className="card session-plan">
-      <h2>{session.templateSnapshot.name} · session plan</h2>
-      <p className="muted">
-        Snapshot taken when this workout started. Targets are not completed
-        sets.
-      </p>
-      {session.templateSnapshot.items.map((item, i) => {
-        const count = sets.filter((s) => s.templateItemId === item.id).length;
-        return (
-          <div className="plan-row" key={item.id}>
-            <div>
-              <strong>
-                {i + 1}. {item.exercise.name}
-              </strong>
-              <p>
-                {count}/{item.sets} sets logged · target {item.reps} reps · RIR{" "}
-                {item.rir}
-              </p>
-            </div>
-            <button className="secondary" onClick={() => pick(item)}>
-              Log planned exercise
-            </button>
-          </div>
-        );
-      })}
-    </section>
-  );
-}
 export function TemplateManager({
   templates,
   exercises,
@@ -220,7 +183,30 @@ export function TemplateManager({
     setQuery("");
   }
   function change(id: string, field: "sets" | "reps" | "rir", value: number) {
-    setItems(items.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
+    setItems(
+      items.map((x) => {
+        if (x.id !== id) return x;
+        const plans = plansFor(x);
+        const setPlans =
+          field === "sets"
+            ? Array.from(
+                {
+                  length: Math.max(
+                    1,
+                    Math.min(100, Number.isFinite(value) ? value : 1),
+                  ),
+                },
+                (_, i) => structuredClone(plans[i] || plans.at(-1)!),
+              )
+            : plans.map((p) => ({
+                ...p,
+                ...(field === "reps"
+                  ? { targetReps: String(value) }
+                  : { targetRir: value }),
+              }));
+        return { ...x, [field]: value, setPlans };
+      }),
+    );
   }
   function move(index: number, direction: number) {
     const next = [...items];
@@ -333,6 +319,78 @@ export function TemplateManager({
                       }
                     />
                   </label>
+                </div>
+                <div className="set-table-scroll">
+                  <table className="set-table">
+                    <thead>
+                      <tr>
+                        {[
+                          "#",
+                          "Load",
+                          "Unit",
+                          "Target",
+                          "Flags",
+                          "Rest (sec)",
+                          "Target RIR",
+                        ].map((h) => (
+                          <th key={h} scope="col">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plansFor(item).map((plan, n) => {
+                        const changePlan = (p: typeof plan) =>
+                          setItems(
+                            items.map((x) =>
+                              x.id === item.id
+                                ? {
+                                    ...x,
+                                    setPlans: plansFor(x).map((old, j) =>
+                                      j === n ? p : old,
+                                    ),
+                                  }
+                                : x,
+                            ),
+                          );
+                        const label = `Planned set ${n + 1}`;
+                        return (
+                          <tr key={n}>
+                            <th scope="row">{n + 1}</th>
+                            <PlanCells
+                              plan={plan}
+                              change={changePlan}
+                              label={label}
+                            />
+                            <PlanFlags
+                              plan={plan}
+                              change={changePlan}
+                              label={label}
+                            />
+                            <td>
+                              <input
+                                aria-label={`${label} target RIR`}
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={plan.targetRir ?? ""}
+                                onChange={(e) =>
+                                  changePlan({
+                                    ...plan,
+                                    targetRir:
+                                      e.target.value === ""
+                                        ? undefined
+                                        : e.target.valueAsNumber,
+                                  })
+                                }
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
                 <div className="actions">
                   <button

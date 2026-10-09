@@ -5,6 +5,8 @@ export const kg = (s: SetRecord) =>
 // RIR-adjusted Epley is a heuristic, not a tested maximum. Restrict the input range.
 export function estimated1RM(s: SetRecord): number | null {
   if (
+    s.completed === false ||
+    s.plan?.warmup ||
     !s.strength ||
     s.type !== "standard" ||
     s.reps < 1 ||
@@ -18,9 +20,17 @@ export function improvement(
   current: SetRecord,
   history: SetRecord[],
 ): string | null {
-  if (!current.strength || current.type !== "standard") return null;
+  if (
+    current.completed === false ||
+    current.plan?.warmup ||
+    !current.strength ||
+    current.type !== "standard"
+  )
+    return null;
   const previous = history.filter(
     (s) =>
+      s.completed !== false &&
+      !s.plan?.warmup &&
       s.id !== current.id &&
       s.exerciseId === current.exerciseId &&
       s.sessionId !== current.sessionId &&

@@ -1,3 +1,4 @@
+import { WorkoutLog } from "./WorkoutLog";
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useRegisterSW } from "virtual:pwa-register/react";
@@ -5,35 +6,23 @@ import raw from "./data/exercises.json";
 import source from "./data/source.json";
 import {
   type Exercise,
-  type SetRecord,
   type Weights,
   type Muscle,
-  type TemplateItem,
   defaults,
   muscles,
-  effective,
   attribution,
   aggregate,
-  target,
   validateSettings,
 } from "./core";
-import {
-  db,
-  now,
-  startSession,
-  saveSet,
-  exportBackup,
-  restoreBackup,
-} from "./db";
+import { db, now, startSession, exportBackup, restoreBackup } from "./db";
 import {
   MesocycleManager,
   SessionDetails,
-  SessionPlan,
   StartWorkout,
   TemplateManager,
 } from "./TrainingViews";
 import { ProgressView } from "./ProgressView";
-import { onDate, sessionDay } from "./training";
+import { sessionDay, weekOf } from "./training";
 import { SyncPanel } from "./SyncPanel";
 const catalog = raw as Exercise[];
 const categories = [
@@ -109,33 +98,7 @@ export default function App() {
   const sets = allSets
     .filter((s) => s.sessionId === session?.id)
     .sort((a, b) => a.sequence - b.sequence);
-  const summary = aggregate(sets);
   const [selected, setSelected] = useState<Exercise | null>(null);
-  const [plannedItemId, setPlannedItemId] = useState<string | null>(null);
-  const [edit, setEdit] = useState<SetRecord | null>(null);
-  const [reps, setReps] = useState(10);
-  const [rir, setRir] = useState(2);
-  const [mini, setMini] = useState(0);
-  const [load, setLoad] = useState<number | "">("");
-  const [unit, setUnit] = useState<"lb" | "kg">("lb");
-  const [strengthEnabled, setStrengthEnabled] = useState(false);
-  useEffect(() => {
-    setStrengthEnabled(
-      !!selected &&
-        (edit
-          ? !!edit.strength
-          : !!(
-              settings.preferences.strengthExercises as
-                | Record<string, boolean>
-                | undefined
-            )?.[selected.id]),
-    );
-  }, [selected?.id, edit, settings.preferences]);
-  const [type, setType] = useState<SetRecord["type"]>("standard");
-  useEffect(() => {
-    setEdit(null);
-    setPlannedItemId(null);
-  }, [page, session?.id]);
   const [query, setQuery] = useState("");
   const [equipment, setEquipment] = useState("");
   const [primary, setPrimary] = useState("");
@@ -174,80 +137,9 @@ export default function App() {
   }
   function pick(e: Exercise) {
     setSelected(e);
-    setPlannedItemId(null);
-    setLoad("");
     setQuery("");
     setDetail(null);
     if (page !== "history") location.hash = "workout";
-  }
-  function editSet(s: SetRecord) {
-    setEdit(s);
-    setPlannedItemId(s.templateItemId || null);
-    setSelected(
-      exercises.find((e) => e.id === s.exerciseId) || {
-        id: s.exerciseId,
-        name: s.exerciseName,
-        force: null,
-        mechanic: null,
-        equipment: null,
-        level: "unknown",
-        primaryMuscles: Object.keys(s.weights),
-        secondaryMuscles: [],
-        category: "strength",
-        instructions: [],
-        images: [],
-      },
-    );
-    setReps(s.reps);
-    setRir(s.rir);
-    setMini(s.miniReps);
-    setType(s.type);
-    setLoad(s.strength?.load ?? "");
-    setUnit(s.strength?.unit ?? "lb");
-  }
-  async function log() {
-    if (!selected || !session)
-      throw new Error("Start a workout and select an exercise first.");
-    if (["cardio", "stretching"].includes(selected.category))
-      throw new Error(
-        "Effective repetitions are unavailable for cardio and stretching.",
-      );
-    if (strengthEnabled && (load === "" || !Number.isFinite(load) || load <= 0))
-      throw new Error("Enter a positive load.");
-    const unchanged = edit?.exerciseId === selected.id;
-    const enteredAt = now(),
-      performedAt =
-        edit?.performedAt ||
-        edit?.timestamp ||
-        onDate(sessionDay(session), enteredAt);
-    await saveSet({
-      id: edit?.id || crypto.randomUUID(),
-      sessionId: session.id,
-      exerciseId: selected.id,
-      exerciseName: unchanged ? edit!.exerciseName : selected.name,
-      timestamp: performedAt,
-      performedAt,
-      createdAt: edit?.createdAt || edit?.timestamp || enteredAt,
-      templateItemId: plannedItemId,
-      sequence:
-        edit?.sequence ?? Math.max(0, ...sets.map((s) => s.sequence)) + 1,
-      type,
-      reps,
-      miniReps: type === "rest-pause" ? mini : 0,
-      rir,
-      effectiveReps: effective(reps, rir, mini, type),
-      weights: unchanged
-        ? edit!.weights
-        : attribution(
-            selected,
-            settings,
-            overrides.find((o) => o.exerciseId === selected.id),
-          ),
-      calculationVersion: "1",
-      strength: strengthEnabled ? { load: Number(load), unit } : undefined,
-    });
-    setEdit(null);
-    setMini(0);
   }
   function directory() {
     return (
@@ -453,6 +345,20 @@ export default function App() {
                 )}
                 {session!.templateSnapshot &&
                   ` · ${session!.templateSnapshot.name}`}
+                {session!.mesocycleId &&
+                  mesocycles
+                    .filter((m) => m.id === session!.mesocycleId)
+                    .map((m) => (
+                      <small className="workout-block" key={m.id}>
+                        {m.name} · Week{" "}
+                        {weekOf(sessionDay(session!), m.startDate)} of{" "}
+                        {weekOf(m.endDate, m.startDate)}
+                        {sessionDay(session!) < m.startDate ||
+                        sessionDay(session!) > m.endDate
+                          ? " · outside plan"
+                          : ""}
+                      </small>
+                    ))}
               </h2>
               {page === "workout" ? (
                 <button
@@ -476,7 +382,6 @@ export default function App() {
                   className="secondary"
                   onClick={() => {
                     setViewSession(null);
-                    setEdit(null);
                   }}
                 >
                   Back to history
@@ -493,337 +398,17 @@ export default function App() {
               mesocycles={mesocycles}
               run={run}
             />
-            <SessionPlan
+            <WorkoutLog
+              key={session!.id}
               session={session!}
               sets={sets}
-              pick={(item) => {
-                pick(item.exercise);
-                setPlannedItemId(item.id);
-                setReps(item.reps);
-                setRir(item.rir);
-                setMini(0);
-                setType("standard");
-                setEdit(null);
-              }}
+              exercises={exercises}
+              settings={settings}
+              overrides={overrides}
+              run={run}
+              selected={selected}
+              clearSelected={() => setSelected(null)}
             />
-            <div className="stats">
-              <div>
-                <strong>{sets.length}</strong>
-                <span>Logged sets</span>
-              </div>
-              <div>
-                <strong>
-                  {sets.filter((s) => s.effectiveReps > 0).length}
-                </strong>
-                <span>Working sets</span>
-              </div>
-              <div>
-                <strong>{fmt(summary.performed)}</strong>
-                <span>Effective reps performed</span>
-              </div>
-              <div>
-                <strong>{new Set(sets.map((s) => s.exerciseId)).size}</strong>
-                <span>Exercises</span>
-              </div>
-            </div>
-            <div className="workout-grid">
-              <section className="card">
-                <p className="eyebrow">{edit ? "EDIT SET" : "LOG A SET"}</p>
-                {selected ? (
-                  <>
-                    <div className="selected">
-                      <div>
-                        <h2>{selected.name}</h2>
-                        <p>
-                          Primary:{" "}
-                          {selected.primaryMuscles.join(", ") ||
-                            "None classified"}
-                        </p>
-                        <p className="muted">
-                          Secondary:{" "}
-                          {selected.secondaryMuscles.join(", ") ||
-                            "None classified"}
-                        </p>
-                      </div>
-                      <button
-                        className="text-button"
-                        onClick={() => setSelected(null)}
-                      >
-                        Change
-                      </button>
-                    </div>
-                    <details>
-                      <summary>Exercise instructions</summary>
-                      <Image path={selected.images[0]} />
-                      <ol>
-                        {selected.instructions.map((i, n) => (
-                          <li key={n}>{i}</li>
-                        ))}
-                      </ol>
-                    </details>
-                    <label className="weight-row">
-                      Track strength for this exercise
-                      <input
-                        type="checkbox"
-                        checked={strengthEnabled}
-                        onChange={(e) => {
-                          const enabled = e.target.checked;
-                          setStrengthEnabled(enabled);
-                          if (edit)
-                            setEdit({
-                              ...edit,
-                              strength: enabled
-                                ? { load: Number(load) || 1, unit }
-                                : undefined,
-                            });
-                          run(() =>
-                            db.settings.put({
-                              ...settings,
-                              preferences: {
-                                ...settings.preferences,
-                                strengthExercises: {
-                                  ...((settings.preferences
-                                    .strengthExercises as object) || {}),
-                                  [selected.id]: enabled,
-                                },
-                              },
-                            }),
-                          );
-                        }}
-                      />
-                    </label>
-                    <div className="segmented">
-                      <button
-                        className={type === "standard" ? "chosen" : ""}
-                        onClick={() => setType("standard")}
-                      >
-                        Standard
-                      </button>
-                      <button
-                        className={type === "rest-pause" ? "chosen" : ""}
-                        onClick={() => setType("rest-pause")}
-                      >
-                        Rest-pause
-                      </button>
-                    </div>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        run(log, edit ? "Set updated." : "Set logged.");
-                      }}
-                    >
-                      {strengthEnabled && (
-                        <div className="entry">
-                          <label>
-                            Load
-                            <input
-                              type="number"
-                              min="0.01"
-                              step="any"
-                              required
-                              value={load}
-                              onChange={(e) =>
-                                setLoad(
-                                  e.target.value === ""
-                                    ? ""
-                                    : e.target.valueAsNumber,
-                                )
-                              }
-                            />
-                          </label>
-                          <label>
-                            Unit
-                            <select
-                              value={unit}
-                              onChange={(e) =>
-                                setUnit(e.target.value as "lb" | "kg")
-                              }
-                            >
-                              <option>lb</option>
-                              <option>kg</option>
-                            </select>
-                          </label>
-                        </div>
-                      )}
-                      <div className="entry">
-                        <label>
-                          {type === "standard"
-                            ? "Repetitions"
-                            : "Activation reps"}
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="0"
-                            step="1"
-                            required
-                            value={reps}
-                            onChange={(e) => setReps(e.target.valueAsNumber)}
-                          />
-                        </label>
-                        {type === "rest-pause" && (
-                          <label>
-                            Mini-set reps
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              min="0"
-                              step="1"
-                              required
-                              value={mini}
-                              onChange={(e) => setMini(e.target.valueAsNumber)}
-                            />
-                          </label>
-                        )}
-                      </div>
-                      <label>Repetitions in reserve</label>
-                      <div className="rir">
-                        {[0, 1, 2, 3, 4, 5, 6].map((n) => (
-                          <button
-                            type="button"
-                            className={rir === n ? "chosen" : ""}
-                            key={n}
-                            onClick={() => setRir(n)}
-                          >
-                            {n === 6 ? "5+" : n}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="preview">
-                        <span>Effective repetitions</span>
-                        <strong>
-                          {Number.isFinite(reps) && Number.isFinite(mini)
-                            ? fmt(
-                                effective(
-                                  Math.max(0, Math.floor(reps)),
-                                  rir,
-                                  Math.max(0, Math.floor(mini)),
-                                  type,
-                                ),
-                              )
-                            : "—"}
-                        </strong>
-                      </div>
-                      <button
-                        className="wide"
-                        disabled={
-                          busy ||
-                          ["cardio", "stretching"].includes(selected.category)
-                        }
-                      >
-                        {edit ? "Save changes" : "Log set + "}
-                      </button>
-                      {["cardio", "stretching"].includes(selected.category) && (
-                        <p>
-                          Effective-rep logging is disabled for this category.
-                        </p>
-                      )}
-                      {edit && (
-                        <button
-                          type="button"
-                          className="text-button wide"
-                          onClick={() => setEdit(null)}
-                        >
-                          Cancel edit
-                        </button>
-                      )}
-                    </form>
-                  </>
-                ) : (
-                  directory()
-                )}
-              </section>
-              <section className="card">
-                <div className="section-title">
-                  <h2>Muscle volume</h2>
-                  <span>
-                    {settings.lower}–{settings.upper} target
-                  </span>
-                </div>
-                <p className="muted">
-                  Full credit to every primary muscle by default. Attributed
-                  totals can exceed reps performed.
-                </p>
-                {muscles.map((m) => {
-                  const n = summary.totals[m] || 0;
-                  return (
-                    <details className="muscle" key={m}>
-                      <summary>
-                        <span className="muscle-label">
-                          <span>{m}</span>
-                          <strong>{fmt(n)}</strong>
-                        </span>
-                        <progress
-                          max={settings.upper || 1}
-                          value={Math.min(n, settings.upper || 1)}
-                        />
-                        <small>
-                          {target(n, settings.lower, settings.upper)}
-                        </small>
-                      </summary>
-                      {sets
-                        .filter((s) => (s.weights[m] || 0) > 0)
-                        .map((s) => (
-                          <p key={s.id}>
-                            {s.exerciseName} · set {s.sequence}:{" "}
-                            {fmt(s.effectiveReps)} × {s.weights[m]} ={" "}
-                            {fmt(s.effectiveReps * s.weights[m]!)}
-                          </p>
-                        ))}
-                    </details>
-                  );
-                })}
-              </section>
-            </div>
-            <section className="card set-log">
-              <h2>Session sets</h2>
-              {!sets.length && (
-                <p className="muted">The first set starts here.</p>
-              )}
-              {sets.map((s) => (
-                <article key={s.id}>
-                  <span className="set-number">{s.sequence}</span>
-                  <div>
-                    <strong>{s.exerciseName}</strong>
-                    <p>
-                      {s.strength
-                        ? `${s.strength.load} ${s.strength.unit} · `
-                        : ""}
-                      {s.reps} reps · RIR {s.rir >= 6 ? "5+" : s.rir}
-                      {s.type === "rest-pause"
-                        ? ` · ${s.miniReps} mini-set reps`
-                        : ""}
-                    </p>
-                  </div>
-                  <strong>
-                    {fmt(s.effectiveReps)}
-                    <small>eff. reps</small>
-                  </strong>
-                  <button className="text-button" onClick={() => editSet(s)}>
-                    Edit
-                  </button>
-                  <button
-                    className="text-button danger"
-                    onClick={() => {
-                      if (confirm("Delete this set?"))
-                        run(() =>
-                          db.transaction(
-                            "rw",
-                            [db.sets, db.sessions],
-                            async () => {
-                              await db.sets.delete(s.id);
-                              await db.sessions.update(s.sessionId, {
-                                updatedAt: now(),
-                              });
-                            },
-                          ),
-                        );
-                    }}
-                  >
-                    Delete
-                  </button>
-                </article>
-              ))}
-            </section>
           </>
         )}
         {page === "exercises" && (
@@ -848,7 +433,6 @@ export default function App() {
                   key={s.id}
                   onClick={() => {
                     setViewSession(s.id);
-                    setEdit(null);
                     setSelected(null);
                   }}
                 >
@@ -1020,7 +604,6 @@ export default function App() {
                           JSON.parse(await file.text()),
                           restoreMode,
                         );
-                        setEdit(null);
                         setViewSession(null);
                       }, "Backup restored.");
                     e.target.value = "";
