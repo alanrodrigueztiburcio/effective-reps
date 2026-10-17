@@ -203,7 +203,7 @@ it("round-trips templates, blocks, snapshots and optional membership", async () 
     dest = make();
   await restoreBackup(b, "replace", dest);
   const restored = await exportBackup(dest);
-  expect(restored.schemaVersion).toBe(4);
+  expect(restored.schemaVersion).toBe(5);
   expect(restored.templates).toEqual(b.templates);
   expect(restored.mesocycles).toEqual(b.mesocycles);
   expect(restored.sessions).toEqual(b.sessions);
@@ -254,7 +254,7 @@ it("syncs new tables and session snapshots with an old remote snapshot", async (
     mesocycles: undefined,
   };
   const merged = mergeSnapshots(old, local, old);
-  expect(merged.schemaVersion).toBe(4);
+  expect(merged.schemaVersion).toBe(5);
   expect(merged.templates).toEqual(local.templates);
   expect(merged.mesocycles).toEqual(local.mesocycles);
 });

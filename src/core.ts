@@ -44,6 +44,8 @@ export interface Session {
   mesocycleId?: string | null;
   templateId?: string | null;
   templateSnapshot?: { name: string; items: TemplateItem[] };
+  microcycleId?: string | null;
+  scheduledWorkoutId?: string | null;
 }
 export interface TemplateItem {
   id: string;
@@ -80,6 +82,38 @@ export interface Mesocycle {
   endDate: string;
   goal: string;
   templateIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  macrocycleId?: string | null;
+}
+export interface Macrocycle {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  goal: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface Microcycle {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  mesocycleId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface ScheduledItem extends TemplateItem {
+  weights: Weights;
+}
+export interface ScheduledWorkout {
+  id: string;
+  day: string;
+  microcycleId: string | null;
+  mesocycleId: string | null;
+  templateId: string | null;
+  snapshot: { name: string; items: ScheduledItem[] };
   createdAt: string;
   updatedAt: string;
 }

@@ -660,6 +660,7 @@ nav a {
 }
 .utility-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 20px;
   margin: -8px 0 22px;
   font-size: 13px;
@@ -899,4 +900,376 @@ nav a {
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 12px;
+}
+.planner-main {
+  max-width: 1800px;
+}
+.planner {
+  min-width: 0;
+}
+.planner-toolbar h2 {
+  margin: 4px 0;
+}
+.planner-toolbar .section-title {
+  align-items: flex-start;
+}
+.planner-selectors {
+  display: flex;
+  gap: 14px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.planner-selectors > label {
+  flex: 1;
+  min-width: 180px;
+}
+.planner-selectors > button {
+  margin-bottom: 6px;
+}
+.planner-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.planner-controls .segmented {
+  margin: 0;
+}
+.planner-controls .segmented button {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 6px;
+  font-size: 12px;
+}
+.planner-controls label {
+  min-width: 200px;
+}
+.exposure-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.exposure-tile {
+  border: 1px solid #e0e4d8;
+  background: #f7f9f1;
+  border-radius: 12px;
+  padding: 12px;
+}
+.exposure-tile h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: capitalize;
+}
+.exposure-tile strong {
+  font-size: 17px;
+}
+.exposure-tile small {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.exposure-track {
+  height: 6px;
+  background: #dce4d5;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 9px 0;
+}
+.exposure-track span {
+  display: block;
+  height: 100%;
+  background: #547550;
+}
+.partial-target {
+  color: #865c22;
+}
+.micro-tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 8px;
+  margin: 20px 0 12px;
+  padding: 4px;
+}
+.micro-tabs button {
+  white-space: nowrap;
+  background: #e9eee1;
+  color: #304738;
+}
+.micro-tabs button.chosen {
+  background: #163f35;
+  color: white;
+}
+.cycle-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-columns: repeat(var(--day-count), minmax(190px, 1fr));
+  grid-auto-columns: minmax(190px, 1fr);
+  gap: 10px;
+  overflow-x: auto;
+  align-items: start;
+  padding: 4px 2px 18px;
+  margin: 0 0 20px;
+}
+.planner-day {
+  background: #ecefe5;
+  padding: 8px;
+  border: 1px solid #e1e5d8;
+  border-radius: 14px;
+  min-width: 0;
+  min-height: 300px;
+}
+.planner-day.selected-day {
+  border-color: #738b57;
+}
+.day-heading {
+  background: transparent;
+  color: #163f35;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  width: 100%;
+  padding: 6px;
+  text-align: left;
+}
+.day-heading strong {
+  text-transform: uppercase;
+}
+.day-heading small {
+  margin-top: 5px;
+  color: #5b6b60;
+}
+.scheduled-card {
+  background: white;
+  border: 1px solid #e1e5d8;
+  border-radius: 9px;
+  margin: 10px 0;
+  padding: 8px;
+  box-shadow: 0 2px 5px #173c2510;
+  cursor: grab;
+}
+.scheduled-card:active {
+  cursor: grabbing;
+}
+.scheduled-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.scheduled-heading .text-button {
+  font-size: 14px;
+  font-weight: 750;
+  padding: 4px;
+  text-align: left;
+}
+.scheduled-heading small {
+  background: #edf2e7;
+  border-radius: 4px;
+  padding: 4px 7px;
+  align-self: start;
+  font-size: 10px;
+}
+.planner-exercise {
+  background: #f3f5ef;
+  border: 1px solid #e4e7de;
+  border-radius: 6px;
+  padding: 7px;
+  margin: 7px 0;
+}
+.planner-exercise summary {
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  line-height: 1.5;
+}
+.planner-exercise summary small {
+  display: block;
+  font-size: 10px;
+  color: #69755f;
+  font-weight: 400;
+}
+.compact-set-scroll {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.compact-sets {
+  min-width: 225px;
+  font-size: 11px;
+}
+.compact-sets td,
+.compact-sets th {
+  padding: 4px;
+}
+.compact-sets input {
+  width: 50px;
+  min-height: 32px;
+  padding: 5px;
+  margin: 0;
+  font-size: 11px;
+}
+.compact-sets small {
+  font-size: 9px;
+}
+.planner-card-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.planner-card-actions button,
+.scheduled-card > button {
+  padding: 6px 9px;
+  font-size: 11px;
+}
+.rest-day {
+  color: #718069;
+  font-size: 12px;
+  padding: 12px 6px;
+}
+.add-day-workout {
+  width: 100%;
+  padding: 8px;
+  font-size: 11px;
+  background: transparent;
+  color: #557249;
+  border: 1px dashed #bac9ac;
+}
+.planner-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.planner-copy input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+}
+.cycle-management > summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+.cycle-management > .actions {
+  margin-bottom: 18px;
+}
+.cycle-editor {
+  margin: 12px 0;
+}
+.planner-adhoc {
+  margin-top: 20px;
+}
+@media (max-width: 700px) {
+  .cycle-board {
+    grid-template-columns: none;
+    grid-auto-columns: 260px;
+  }
+  .exposure-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .planner-toolbar .section-title {
+    display: block;
+  }
+  .planner-selectors > label {
+    min-width: 100%;
+  }
+  .planner-controls > label {
+    width: 100%;
+  }
+  .planner-controls .segmented {
+    width: 100%;
+  }
+}
+@media (min-width: 1000px) {
+  .planner-main {
+    padding-top: 16px;
+  }
+  .planner-main .page-heading {
+    display: none;
+  }
+  .planner-main .utility-links {
+    margin: 0 0 12px;
+  }
+  .planner-toolbar,
+  .planner-analytics,
+  .planner-schedule {
+    padding: 14px 18px;
+  }
+  .planner .card + .card {
+    margin-top: 12px;
+  }
+  .planner-toolbar .eyebrow {
+    display: none;
+  }
+  .planner-toolbar h2 {
+    font-size: 21px;
+  }
+  .planner-toolbar p {
+    margin: 5px 0;
+    font-size: 12px;
+  }
+  .planner-selectors label {
+    margin: 7px 0 0;
+  }
+  .planner-selectors select,
+  .planner-selectors input,
+  .planner-controls select {
+    min-height: 34px;
+    padding: 7px 9px;
+    margin-top: 4px;
+    font-size: 12px;
+  }
+  .planner-analytics h2,
+  .planner-schedule h2 {
+    font-size: 17px;
+    margin: 0;
+  }
+  .planner-controls {
+    gap: 12px;
+  }
+  .planner-controls label {
+    margin: 8px 0;
+  }
+  .planner-controls .segmented button {
+    min-height: 36px;
+    padding: 7px 13px;
+  }
+  .exposure-grid {
+    margin: 8px 0;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  }
+  .exposure-tile {
+    padding: 8px 10px;
+  }
+  .exposure-tile h3 {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+  .exposure-tile strong {
+    font-size: 15px;
+  }
+  .exposure-track {
+    margin: 5px 0;
+    height: 4px;
+  }
+  .exposure-tile small {
+    font-size: 10px;
+    margin-top: 3px;
+  }
+  .planner-analytics > .muted,
+  .planner-schedule > .muted {
+    margin: 6px 0 0;
+    font-size: 10px;
+  }
+  .planner-copy {
+    margin: 8px 0 0;
+    font-size: 11px;
+  }
+  .micro-tabs {
+    margin: 12px 0 8px;
+  }
+  .micro-tabs button {
+    min-height: 34px;
+    padding: 7px 12px;
+    font-size: 12px;
+  }
 }

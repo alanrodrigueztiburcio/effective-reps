@@ -7,6 +7,7 @@ const keys = [
   "settings",
   "templates",
   "mesocycles",
+  "macrocycles", "microcycles", "scheduled",
 ] as const;
 export const fingerprint = (b: Backup) =>
   JSON.stringify(
@@ -23,7 +24,7 @@ export function mergeSnapshots(
   local: Backup,
   remote: Backup,
 ): Backup {
-  const result: Backup = { ...local, schemaVersion: 4 };
+  const result: Backup = { ...local, schemaVersion: 5 };
   for (const key of keys) {
     const index = (b: Backup | null) =>
       new Map((b?.[key] || []).map((r: any) => [r.id || r.exerciseId, r]));

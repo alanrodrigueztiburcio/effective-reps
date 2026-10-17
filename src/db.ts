@@ -8,6 +8,9 @@ import {
   type Settings,
   type WorkoutTemplate,
   type Mesocycle,
+  type Macrocycle,
+  type Microcycle,
+  type ScheduledWorkout,
   defaults,
   attribution,
   effective,
@@ -22,6 +25,7 @@ import {
   validateTemplate,
   validateMesocycle,
 } from "./training";
+import { validatePeriod, validateScheduled } from "./planning";
 export class Database extends Dexie {
   sessions!: Table<Session, string>;
   sets!: Table<SetRecord, string>;
@@ -30,6 +34,9 @@ export class Database extends Dexie {
   settings!: Table<Settings, string>;
   templates!: Table<WorkoutTemplate, string>;
   mesocycles!: Table<Mesocycle, string>;
+  macrocycles!: Table<Macrocycle, string>;
+  microcycles!: Table<Microcycle, string>;
+  scheduled!: Table<ScheduledWorkout, string>;
   constructor(name = "effective-reps") {
     super(name);
     this.version(1).stores({
@@ -48,6 +55,13 @@ export class Database extends Dexie {
       settings: "id",
       templates: "id,name",
       mesocycles: "id,startDate,endDate",
+    });
+    this.version(3).stores({
+      sessions:
+        "id,status,startedAt,performedDate,mesocycleId,templateId,microcycleId,scheduledWorkoutId",
+      macrocycles: "id,startDate,endDate",
+      microcycles: "id,mesocycleId,startDate",
+      scheduled: "id,day,microcycleId,mesocycleId",
     });
   }
 }
@@ -153,6 +167,7 @@ export async function updateSessionDetails(
         performedAt,
         startedAt: performedAt,
         mesocycleId,
+        ...(s.mesocycleId !== mesocycleId ? { microcycleId: null } : {}),
         updatedAt: now(),
       });
       // Retiming is intentional; preserve original input timestamps and every calculation snapshot.
@@ -177,7 +192,7 @@ export async function saveSet(record: SetRecord) {
   });
 }
 export interface Backup {
-  schemaVersion: 1 | 2 | 3 | 4;
+  schemaVersion: 1 | 2 | 3 | 4 | 5;
   exportedAt: string;
   sessions: Session[];
   sets: SetRecord[];
@@ -186,6 +201,9 @@ export interface Backup {
   settings: Settings[];
   templates?: WorkoutTemplate[];
   mesocycles?: Mesocycle[];
+  macrocycles?: Macrocycle[];
+  microcycles?: Microcycle[];
+  scheduled?: ScheduledWorkout[];
 }
 export async function exportBackup(database = db): Promise<Backup> {
   return database.transaction(
@@ -198,9 +216,12 @@ export async function exportBackup(database = db): Promise<Backup> {
       database.settings,
       database.templates,
       database.mesocycles,
+      database.macrocycles,
+      database.microcycles,
+      database.scheduled,
     ],
     async () => ({
-      schemaVersion: 4,
+      schemaVersion: 5,
       exportedAt: now(),
       sessions: await database.sessions.toArray(),
       sets: await database.sets.toArray(),
@@ -209,6 +230,9 @@ export async function exportBackup(database = db): Promise<Backup> {
       settings: await database.settings.toArray(),
       templates: await database.templates.toArray(),
       mesocycles: await database.mesocycles.toArray(),
+      macrocycles: await database.macrocycles.toArray(),
+      microcycles: await database.microcycles.toArray(),
+      scheduled: await database.scheduled.toArray(),
     }),
   );
 }
@@ -229,7 +253,7 @@ function date(value: unknown) {
 }
 export function validateBackup(value: unknown): Backup {
   const b = value as Backup;
-  if (!b || ![1, 2, 3, 4].includes(b.schemaVersion) || !date(b.exportedAt))
+  if (!b || ![1, 2, 3, 4, 5].includes(b.schemaVersion) || !date(b.exportedAt))
     throw new Error("Unsupported or malformed backup.");
   if (
     b.schemaVersion >= 2 &&
@@ -243,6 +267,9 @@ export function validateBackup(value: unknown): Backup {
     "overrides",
     "settings",
     ...(b.schemaVersion >= 2 ? (["templates", "mesocycles"] as const) : []),
+    ...(b.schemaVersion >= 5
+      ? (["macrocycles", "microcycles", "scheduled"] as const)
+      : []),
   ] as const) {
     if (!Array.isArray(b[key])) throw new Error(`Missing ${key}.`);
     const ids = b[key]!.map((r: any) =>
@@ -270,7 +297,41 @@ export function validateBackup(value: unknown): Backup {
       throw new Error("Invalid block template reference.");
   }
   const mesocycleIds = new Set((b.mesocycles || []).map((m) => m.id));
+  const macroIds = new Set((b.macrocycles || []).map((m) => m.id)),
+    microIds = new Map((b.microcycles || []).map((m) => [m.id, m]));
+  for (const macro of b.macrocycles || []) validatePeriod(macro);
+  for (const meso of b.mesocycles || [])
+    if (meso.macrocycleId && !macroIds.has(meso.macrocycleId))
+      throw new Error("Invalid macrocycle reference.");
+  for (const micro of b.microcycles || []) {
+    validatePeriod(micro);
+    if (!mesocycleIds.has(micro.mesocycleId))
+      throw new Error("Invalid microcycle parent.");
+  }
+  const scheduledIds = new Set((b.scheduled || []).map((w) => w.id));
+  for (const w of b.scheduled || []) {
+    validateScheduled(w);
+    if (
+      (w.templateId && !templateIds.has(w.templateId)) ||
+      (w.mesocycleId && !mesocycleIds.has(w.mesocycleId)) ||
+      (w.microcycleId &&
+        (!microIds.has(w.microcycleId) ||
+          microIds.get(w.microcycleId)!.mesocycleId !== w.mesocycleId))
+    )
+      throw new Error("Invalid scheduled training reference.");
+  }
+  const linked = new Set<string>();
   for (const s of b.sessions) {
+    if (
+      (s.microcycleId &&
+        (!microIds.has(s.microcycleId) ||
+          microIds.get(s.microcycleId)!.mesocycleId !== s.mesocycleId)) ||
+      (s.scheduledWorkoutId &&
+        (!scheduledIds.has(s.scheduledWorkoutId) ||
+          linked.has(s.scheduledWorkoutId)))
+    )
+      throw new Error("Invalid or duplicate logged workout link.");
+    if (s.scheduledWorkoutId) linked.add(s.scheduledWorkoutId);
     if (
       !["active", "completed"].includes(s.status) ||
       ![s.startedAt, s.createdAt, s.updatedAt].every(date) ||
@@ -392,6 +453,9 @@ export async function restoreBackup(
       database.settings,
       database.templates,
       database.mesocycles,
+      database.macrocycles,
+      database.microcycles,
+      database.scheduled,
     ],
     async () => {
       if (mode === "replace") {
@@ -410,6 +474,9 @@ export async function restoreBackup(
       // Stable identifiers make merge idempotent; existing records win conflicts.
       for (const [table, records] of [
         [database.templates, b.templates || []],
+        [database.macrocycles, b.macrocycles || []],
+        [database.microcycles, b.microcycles || []],
+        [database.scheduled, b.scheduled || []],
         [database.mesocycles, b.mesocycles || []],
         [database.sessions, b.sessions],
         [database.sets, b.sets],
@@ -427,6 +494,9 @@ export async function restoreBackup(
         }
       if (!(await database.settings.get("main")))
         await database.settings.put(defaults);
+      // A merge can combine individually valid snapshots into conflicting links.
+      // Validate the final graph before the transaction is committed.
+      validateBackup(await exportBackup(database));
     },
   );
 }

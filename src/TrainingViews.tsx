@@ -5,6 +5,7 @@ import { planLabels, resizePlans } from "./workoutOrder";
 import type {
   Exercise,
   Mesocycle,
+  Macrocycle,
   Session,
   TemplateItem,
   WorkoutTemplate,
@@ -480,17 +481,20 @@ export function MesocycleManager({
   templates,
   sessions,
   run,
+  macros = [],
 }: {
   mesocycles: Mesocycle[];
   templates: WorkoutTemplate[];
   sessions: Session[];
   run: Run;
+  macros?: Macrocycle[];
 }) {
   const [editing, setEditing] = useState<string | null>(null),
     [name, setName] = useState(""),
     [start, setStart] = useState(localDate()),
     [end, setEnd] = useState(localDate()),
     [goal, setGoal] = useState(""),
+    [macroId, setMacroId] = useState(""),
     [ids, setIds] = useState<string[]>([]);
   function open(m?: Mesocycle) {
     setEditing(m?.id || "new");
@@ -498,6 +502,7 @@ export function MesocycleManager({
     setStart(m?.startDate || localDate());
     setEnd(m?.endDate || localDate());
     setGoal(m?.goal || "");
+    setMacroId(m?.macrocycleId || "");
     setIds(m?.templateIds || []);
   }
   const today = localDate();
@@ -566,10 +571,13 @@ export function MesocycleManager({
                   endDate: end,
                   goal,
                   templateIds: ids,
+                  macrocycleId: macroId || null,
                   createdAt: previous?.createdAt || now(),
                   updatedAt: now(),
                 };
                 validateMesocycle(m);
+                if (macroId && !(await db.macrocycles.get(macroId)))
+                  throw new Error("Macrocycle no longer exists.");
                 await db.mesocycles.put(m);
                 setEditing(null);
               }, "Mesocycle saved. Workout membership unchanged.");
@@ -582,6 +590,21 @@ export function MesocycleManager({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
+            </label>
+            <label>
+              Parent macrocycle
+              <select
+                aria-label="Parent macrocycle"
+                value={macroId}
+                onChange={(e) => setMacroId(e.target.value)}
+              >
+                <option value="">No macrocycle</option>
+                {macros.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <div className="entry">
               <label>

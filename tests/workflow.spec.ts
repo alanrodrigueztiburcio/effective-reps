@@ -144,7 +144,7 @@ test("exercise drag order, supersets and alternating pairs survive template reus
   await page
     .getByRole("button", { name: "Complete workout", exact: true })
     .click();
-  await page.getByRole("link", { name: "Training", exact: true }).click();
+  await page.getByRole("link", { name: "Planner", exact: true }).click();
   await page
     .getByLabel("Workout template", { exact: true })
     .selectOption({ label: "Superset pairs" });
@@ -245,7 +245,7 @@ test("spreadsheet sets, independent flags, rest timer and full workout templates
   await expect(
     page.getByText("Workout completed.", { exact: false }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Training", exact: true }).click();
+  await page.getByRole("link", { name: "Planner", exact: true }).click();
   await page
     .getByLabel("Workout template", { exact: true })
     .selectOption({ label: "Full body table" });
@@ -527,7 +527,7 @@ test("optional strength history, matched-RIR progression, and two-device sync", 
   await desktop
     .getByRole("button", { name: "Save template", exact: true })
     .click();
-  await desktop.getByRole("link", { name: "Training", exact: true }).click();
+  await desktop.getByRole("link", { name: "Planner", exact: true }).click();
   await desktop
     .getByRole("button", { name: "New mesocycle", exact: true })
     .click();
@@ -546,7 +546,7 @@ test("optional strength history, matched-RIR progression, and two-device sync", 
   await expect.poll(() => cloud?.payload.templates?.length).toBe(1);
   await expect.poll(() => cloud?.payload.mesocycles?.length).toBe(1);
   await phone.getByRole("button", { name: "Sync now", exact: true }).click();
-  await phone.getByRole("link", { name: "Training", exact: true }).click();
+  await phone.getByRole("link", { name: "Planner", exact: true }).click();
   await expect(
     phone.getByRole("heading", { name: "Synced block", exact: true }),
   ).toBeVisible();
@@ -579,7 +579,7 @@ test("backdated template session, explicit block membership, immutable plans and
   await page
     .getByRole("button", { name: "Save template", exact: true })
     .click();
-  await page.getByRole("link", { name: "Training", exact: true }).click();
+  await page.getByRole("link", { name: "Planner", exact: true }).click();
   await page
     .getByRole("button", { name: "New mesocycle", exact: true })
     .click();

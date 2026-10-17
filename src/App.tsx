@@ -1,4 +1,5 @@
 import { WorkoutLog } from "./WorkoutLog";
+import { Planner, ScheduledSheet } from "./Planner";
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useRegisterSW } from "virtual:pwa-register/react";
@@ -51,9 +52,16 @@ function Image({ path, small = false }: { path?: string; small?: boolean }) {
   );
 }
 export default function App() {
-  const [page, setPage] = useState(location.hash.slice(1) || "training");
+  const readRoute = () => location.hash.slice(1).split("?")[0] || "training";
+  const [page, setPage] = useState(readRoute());
+  const [routeQuery, setRouteQuery] = useState(
+    () => location.hash.split("?")[1] || "",
+  );
   useEffect(() => {
-    const f = () => setPage(location.hash.slice(1) || "training");
+    const f = () => {
+      setPage(readRoute());
+      setRouteQuery(location.hash.split("?")[1] || "");
+    };
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
   }, []);
@@ -81,6 +89,12 @@ export default function App() {
       ),
     ) || [];
   const allSets = useLiveQuery(() => db.sets.toArray()) || [];
+  const macros =
+    useLiveQuery(() => db.macrocycles.orderBy("startDate").toArray()) || [];
+  const micros =
+    useLiveQuery(() => db.microcycles.orderBy("startDate").toArray()) || [];
+  const scheduled =
+    useLiveQuery(() => db.scheduled.orderBy("day").toArray()) || [];
   const custom = useLiveQuery(() => db.custom.toArray()) || [];
   const overrides = useLiveQuery(() => db.overrides.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.get("main")) || defaults;
@@ -93,8 +107,24 @@ export default function App() {
   const exercises = [...catalog, ...custom];
   const active = sessions.find((s) => s.status === "active");
   const [viewSession, setViewSession] = useState<string | null>(null);
+  const params = new URLSearchParams(routeQuery),
+    routeId = params.get("id"),
+    plannedWorkout =
+      page === "workout"
+        ? scheduled.find((w) => w.id === params.get("scheduled"))
+        : undefined;
+  const openLog = (id: string) => {
+    setSelected(null);
+    location.hash = `workout?id=${id}`;
+  };
   const session =
-    page === "history" ? sessions.find((s) => s.id === viewSession) : active;
+    page === "history"
+      ? sessions.find((s) => s.id === viewSession)
+      : routeId
+        ? sessions.find((s) => s.id === routeId)
+        : plannedWorkout
+          ? undefined
+          : active;
   const sets = allSets
     .filter((s) => s.sessionId === session?.id)
     .sort((a, b) => a.sequence - b.sequence);
@@ -248,13 +278,13 @@ export default function App() {
           ● {online ? "Local storage" : "Offline"}
         </span>
       </header>
-      <main>
+      <main className={page === "training" ? "planner-main" : ""}>
         <div className="page-heading">
           <div>
             <p className="eyebrow">YOUR TRAINING, ON THIS DEVICE</p>
             <h1>
               {page === "training"
-                ? "Your training"
+                ? "Training planner"
                 : page === "templates"
                   ? "Workout templates"
                   : page === "workout"
@@ -272,6 +302,9 @@ export default function App() {
         <div className="utility-links">
           <a href="#exercises">Exercise directory</a>
           <a href="#settings">Settings</a>
+          <a href="#history">History</a>
+          <a href="#templates">Templates</a>
+          <a href="#progress">Progress</a>
         </div>
         <SyncPanel visible={page === "settings"} />
         {message && (
@@ -290,7 +323,17 @@ export default function App() {
             </button>
           </div>
         )}
-        {page === "workout" && !active && (
+        {page === "workout" && plannedWorkout && (
+          <ScheduledSheet
+            workout={plannedWorkout}
+            linked={sessions.find(
+              (s) => s.scheduledWorkoutId === plannedWorkout.id,
+            )}
+            run={run}
+            open={openLog}
+          />
+        )}
+        {page === "workout" && !session && !plannedWorkout && (
           <StartWorkout
             templates={templates}
             mesocycles={mesocycles}
@@ -298,32 +341,22 @@ export default function App() {
           />
         )}
         {page === "training" && (
-          <>
-            <MesocycleManager
-              mesocycles={mesocycles}
-              templates={templates}
-              sessions={sessions}
-              run={run}
-            />
-            {active ? (
-              <section className="card">
-                <h2>Workout in progress</h2>
-                <p>
-                  {sessionDay(active)} ·{" "}
-                  {active.templateSnapshot?.name || "Blank workout"}
-                </p>
-                <a className="button-link" href="#workout">
-                  Resume workout
-                </a>
-              </section>
-            ) : (
-              <StartWorkout
-                templates={templates}
-                mesocycles={mesocycles}
-                run={run}
-              />
-            )}
-          </>
+          <Planner
+            data={{
+              macros,
+              mesos: mesocycles,
+              micros,
+              scheduled,
+              sessions,
+              sets: allSets,
+            }}
+            templates={templates}
+            settings={settings}
+            overrides={overrides}
+            exercises={exercises}
+            run={run}
+            openLog={openLog}
+          />
         )}
         {page === "templates" && (
           <TemplateManager
@@ -332,7 +365,7 @@ export default function App() {
             run={run}
           />
         )}
-        {((page === "workout" && active) ||
+        {((page === "workout" && session) ||
           (page === "history" && session)) && (
           <>
             <div className="session-heading">
@@ -350,9 +383,11 @@ export default function App() {
                     .filter((m) => m.id === session!.mesocycleId)
                     .map((m) => (
                       <small className="workout-block" key={m.id}>
-                        {m.name} · Week{" "}
-                        {weekOf(sessionDay(session!), m.startDate)} of{" "}
-                        {weekOf(m.endDate, m.startDate)}
+                        {m.name} ·{" "}
+                        {session!.microcycleId
+                          ? micros.find((c) => c.id === session!.microcycleId)
+                              ?.name || "Assigned microcycle"
+                          : `Week ${weekOf(sessionDay(session!), m.startDate)} of ${weekOf(m.endDate, m.startDate)}`}
                         {sessionDay(session!) < m.startDate ||
                         sessionDay(session!) > m.endDate
                           ? " · outside plan"
@@ -360,7 +395,7 @@ export default function App() {
                       </small>
                     ))}
               </h2>
-              {page === "workout" ? (
+              {page === "workout" && session!.status === "active" ? (
                 <button
                   className="secondary"
                   onClick={() =>
@@ -377,7 +412,7 @@ export default function App() {
                 >
                   Complete workout
                 </button>
-              ) : (
+              ) : page === "history" ? (
                 <button
                   className="secondary"
                   onClick={() => {
@@ -386,6 +421,10 @@ export default function App() {
                 >
                   Back to history
                 </button>
+              ) : (
+                <a className="button-link secondary" href="#training">
+                  Back to planner
+                </a>
               )}
             </div>
             <SessionDetails
@@ -668,11 +707,8 @@ export default function App() {
       </main>
       <nav>
         {[
-          ["training", "▦", "Training"],
-          ["workout", "◈", "Workout"],
-          ["history", "◷", "History"],
-          ["templates", "≡", "Templates"],
-          ["progress", "↗", "Progress"],
+          ["training", "▦", "Planner"],
+          ["workout", "◈", "Workout log"],
         ].map(([id, icon, label]) => (
           <a
             className={page === id ? "active" : ""}
